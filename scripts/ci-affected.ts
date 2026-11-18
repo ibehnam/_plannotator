@@ -76,7 +76,7 @@ export const CORE_GUARDS = [
 
 /** Top-level entries the picker knows. A change under any other one runs everything. */
 export const KNOWN_TOP = [
-  'apps', 'packages', 'scripts', 'tests', 'build', 'docs', 'adr', 'spec', 'bin', 'patches', 'vendor', '.github', '.agents',
+  'apps', 'packages', 'scripts', 'tests', 'build', 'docs', 'adr', 'spec', 'bin', 'patches', 'vendor', '.github', '.agents', 'local',
   '.claude-plugin', '.factory-plugin', '.product', '.adr-dir', '.gitignore', '.gitattributes', '.gitleaks.toml', '.semgrep.yml', '.semgrepignore',
   'AGENTS.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'README.md', 'SECURITY.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'bun.lock', 'bunfig.toml',
   'openpackage.yml', 'package.json',
