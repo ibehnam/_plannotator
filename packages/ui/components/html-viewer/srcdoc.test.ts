@@ -4688,6 +4688,193 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     });
   });
 
+  // --- Text positions: a quote the page holds more than once keeps its own occurrence ---------------
+
+  /** A mouse-drag selection from (START, START-OFFSET) to (END, END-OFFSET): the selection message it posts. */
+  async function dragSelect(start: Node, startOffset: number, end: Node, endOffset: number): Promise<BridgeData> {
+    postBridge({ type: "plannotator-bridge-set-vim-mode", enabled: false });
+    postBridge({ type: "plannotator-bridge-set-input-method", method: "drag" });
+    const received: BridgeData[] = [];
+    const collect = (event: MessageEvent) => {
+      const data = bridgeMessageData(event);
+      if (data?.type === "plannotator-bridge-selection") received.push(data);
+    };
+    window.addEventListener("message", collect);
+    try {
+      const range = document.createRange();
+      range.setStart(start, startOffset);
+      range.setEnd(end, endOffset);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      (start.parentElement ?? document.body).dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+      return await waitUntil("the selection message", () => received[0]);
+    } finally {
+      window.removeEventListener("message", collect);
+      postBridge({ type: "plannotator-bridge-cancel-selection" });
+    }
+  }
+
+  const restoreMark = (id: string, text: string, textPosition?: unknown) =>
+    postBridge({ type: "plannotator-bridge-find-and-mark", id, originalText: text, annotationType: "comment", textPosition });
+
+  const startsIn = (id: string) => committedRanges(id)[0]?.startContainer.parentElement?.id;
+
+  // "both" twice: in #a (characters 6-10) and in #b (5-9).
+  const BOTH_PAGE = '<p id="a">keeps both parts</p><p id="b">says both again</p>';
+
+  test("a drag posts where its selection stands, whitespace at its ends left out", async () => {
+    document.body.innerHTML = BOTH_PAGE;
+    const b = document.querySelector("#b")!.firstChild!;
+    const exact = await dragSelect(b, 5, b, 9);
+    expect(exact.text).toBe("both");
+    expect(exact.textPosition).toEqual({ anchor: expect.objectContaining({ selector: "#b", tagName: "p" }), start: 5, end: 9 });
+    // Dragged with the spaces around it, the selection still stands on the word.
+    expect((await dragSelect(b, 4, b, 10)).textPosition).toMatchObject({ start: 5, end: 9 });
+    document.body.replaceChildren();
+  });
+
+  test("a pinpoint click posts no position", async () => {
+    document.body.innerHTML = BOTH_PAGE;
+    postBridge({ type: "plannotator-bridge-set-vim-mode", enabled: false });
+    postBridge({ type: "plannotator-bridge-set-input-method", method: "pinpoint" });
+    const b = document.querySelector<HTMLElement>("#b")!;
+    hoverAt(b, 20, 10);
+    const { messages } = await clickAndCollectSelection(b, 20, 10);
+    expect(messages.length).toBe(1);
+    expect(messages[0]!.textPosition).toBeUndefined();
+    postBridge({ type: "plannotator-bridge-cancel-selection" });
+    postBridge({ type: "plannotator-bridge-set-input-method", method: "drag" });
+    document.body.replaceChildren();
+  });
+
+  test("restore binds a repeated quote's saved occurrence; without a position, the first", async () => {
+    document.body.innerHTML = BOTH_PAGE;
+    const b = document.querySelector("#b")!.firstChild!;
+    const { textPosition } = await dragSelect(b, 5, b, 9);
+    restoreMark("saved", "both", textPosition);
+    restoreMark("first", "both");
+    await flushOverlay();
+    expect(startsIn("saved")).toBe("b");
+    expect(committedRanges("saved")[0]!.toString()).toBe("both");
+    expect(startsIn("first")).toBe("a");
+    postBridge({ type: "plannotator-bridge-clear-marks" });
+    document.body.replaceChildren();
+  });
+
+  test("a position whose words changed, or whose element is gone, falls back to the search", async () => {
+    document.body.innerHTML = BOTH_PAGE;
+    const b = document.querySelector("#b")!.firstChild!;
+    const { textPosition } = await dragSelect(b, 5, b, 9);
+    document.querySelector("#b")!.textContent = "says bath again";
+    restoreMark("changed", "both", textPosition);
+    document.querySelector("#b")!.remove();
+    restoreMark("gone", "both", textPosition);
+    await flushOverlay();
+    expect(startsIn("changed")).toBe("a");
+    expect(startsIn("gone")).toBe("a");
+    postBridge({ type: "plannotator-bridge-clear-marks" });
+    document.body.replaceChildren();
+  });
+
+  test("a selection across two blocks restores on its own occurrence", async () => {
+    document.body.innerHTML = '<p id="a1">one both</p><p id="b1">two</p><p id="a2">one both</p><p id="b2">two</p>';
+    const a2 = document.querySelector("#a2")!.firstChild!;
+    const b2 = document.querySelector("#b2")!.firstChild!;
+    const selection = await dragSelect(a2, 4, b2, 3);
+    restoreMark("across", String(selection.text), selection.textPosition);
+    await flushOverlay();
+    const [range] = committedRanges("across");
+    expect([range!.startContainer.parentElement!.id, range!.endContainer.parentElement!.id]).toEqual(["a2", "b2"]);
+    postBridge({ type: "plannotator-bridge-clear-marks" });
+    document.body.replaceChildren();
+  });
+
+  test("a malformed position is ignored: the quote is searched for as before", async () => {
+    document.body.innerHTML = BOTH_PAGE;
+    const bad = [{ start: "x" }, { anchor: { selector: "#b", tagName: "p" }, start: 9, end: 5 }, "#b 5-9", null, 42];
+    bad.forEach((position, i) => restoreMark(`bad-${i}`, "both", position));
+    await flushOverlay();
+    expect(bad.map((_, i) => startsIn(`bad-${i}`))).toEqual(bad.map(() => "a"));
+    postBridge({ type: "plannotator-bridge-clear-marks" });
+    document.body.replaceChildren();
+  });
+
+  test("a range the page replaced is found again on its saved occurrence, not the first", async () => {
+    document.body.innerHTML = BOTH_PAGE;
+    const b = document.querySelector("#b")!.firstChild!;
+    const { textPosition } = await dragSelect(b, 5, b, 9);
+    restoreMark("live", "both", textPosition);
+    await flushOverlay();
+    const p = document.querySelector("#b")!;
+    p.replaceChildren(document.createTextNode("says both again"));
+    deliverPageMutations([{
+      type: "childList",
+      target: p,
+      addedNodes: [p.firstChild] as unknown as NodeList,
+      removedNodes: [] as unknown as NodeList,
+    }]);
+    postBridge({ type: "plannotator-bridge-sync-annotations", annotations: [] });
+    await flushOverlay();
+    expect(startsIn("live")).toBe("b");
+    postBridge({ type: "plannotator-bridge-clear-marks" });
+    document.body.replaceChildren();
+  });
+
+  test("an unsent comment's selection comes back on its own occurrence", async () => {
+    document.body.innerHTML = BOTH_PAGE;
+    const b = document.querySelector("#b")!.firstChild!;
+    const { textPosition } = await dragSelect(b, 5, b, 9);
+    window.getSelection()!.removeAllRanges();
+    const answers = await collectMessages(["plannotator-bridge-selection"], () =>
+      postBridge({ type: "plannotator-bridge-restore-draft", id: "draft-1", text: "both", textPosition }),
+    );
+    expect(answers.length).toBe(1);
+    expect(window.getSelection()!.getRangeAt(0).startContainer.parentElement!.id).toBe("b");
+    postBridge({ type: "plannotator-bridge-cancel-selection" });
+    document.body.replaceChildren();
+  });
+
+  test("an element annotation made outside pinpoint (a data-annotate click) posts no position", async () => {
+    document.body.innerHTML = '<p id="a">keeps both parts</p><p id="b" data-annotate>says both again</p>';
+    postBridge({ type: "plannotator-bridge-set-vim-mode", enabled: false });
+    postBridge({ type: "plannotator-bridge-set-input-method", method: "drag" });
+    window.getSelection()!.removeAllRanges();
+    const messages = await collectMessages(["plannotator-bridge-selection"], () =>
+      clickAt(document.querySelector("#b")!, 10, 10, false),
+    );
+    expect(messages.map((m) => [m.text, m.textPosition])).toEqual([["says both again", undefined]]);
+    postBridge({ type: "plannotator-bridge-cancel-selection" });
+    document.body.replaceChildren();
+  });
+
+  test("a selection whose ends are element boundaries (a triple click) posts its position, which restores", async () => {
+    document.body.innerHTML = '<p id="c1">both</p><p id="c2">both</p>';
+    const c2 = document.querySelector("#c2")!;
+    const { textPosition } = await dragSelect(c2, 0, c2, 1);
+    expect(textPosition).toEqual({ anchor: expect.objectContaining({ selector: "#c2" }), start: 0, end: 4 });
+    restoreMark("tripled", "both", textPosition);
+    await flushOverlay();
+    expect(startsIn("tripled")).toBe("c2");
+    postBridge({ type: "plannotator-bridge-clear-marks" });
+    document.body.replaceChildren();
+  });
+
+  test("a position that cannot be measured never stops the selection, which posts without one", async () => {
+    // A boundary in another root makes Range.comparePoint throw in a browser.
+    document.body.innerHTML = BOTH_PAGE;
+    const originalComparePoint = Range.prototype.comparePoint;
+    Range.prototype.comparePoint = () => { throw new DOMException("other root", "WrongDocumentError"); };
+    try {
+      const b = document.querySelector("#b")!;
+      const message = await dragSelect(b, 0, b, 1);
+      expect(message.text).toBe("says both again");
+      expect(message.textPosition).toBeUndefined();
+    } finally {
+      Range.prototype.comparePoint = originalComparePoint;
+    }
+    document.body.replaceChildren();
+  });
+
   test("the page observer watches documentElement; body swaps unlock re-search (M3 scope)", async () => {
     const observer = capturedObservers[0];
     if (!observer) throw new Error("bridge page observer was not captured");
