@@ -1791,7 +1791,7 @@ ${SANDBOX_SHIM_SCRIPT}
   var MARKER_SPREAD_STEP = 12.5;   // horizontal step for coincident markers
   var MARKER_SPREAD_EDGE = 28.5;   // effective edge clamp while spreading
   var MARKER_ASSOC_TOLERANCE = 16; // clamped point must stay this close to the visible target
-  var MAX_HIGHLIGHT_RECTS = 48;    // highlight rects drawn per range target
+  var MAX_HIGHLIGHT_RECTS = 2048;  // on-screen rects drawn per range target: a deliberate safety bound, never the selection's
   var MAX_SYNC_ANNOTATIONS = 512;  // parent-synced numbering entries
 
   // Style isolation only (not a security boundary): the shadow root keeps the
@@ -2442,8 +2442,11 @@ ${SANDBOX_SHIM_SCRIPT}
   var VIEWPORT_CULL_MARGIN = 64;
   function rectOutsideViewport(rect) {
     if (!rect || !layoutActive()) return false;
-    var vw = window.innerWidth;
-    var vh = window.innerHeight;
+    return rectOffViewport(rect, window.innerWidth, window.innerHeight);
+  }
+
+  // The cull itself, against a viewport size the caller read once.
+  function rectOffViewport(rect, vw, vh) {
     return rectBottom(rect) < -VIEWPORT_CULL_MARGIN
       || rect.top > vh + VIEWPORT_CULL_MARGIN
       || rectRight(rect) < -VIEWPORT_CULL_MARGIN
@@ -2519,43 +2522,83 @@ ${SANDBOX_SHIM_SCRIPT}
   // element's border box AND its line rects, so multi-paragraph selections
   // would double-paint stacked translucent rects (and redlines duplicate
   // strike lines). Drop any rect that strictly contains a smaller rect in
-  // the same list.
+  // the same list. A contained rect starts inside its container and leaves
+  // room for a whole rect above the container's bottom, so with the rects
+  // ordered by top, then left, each is compared only with those starting on
+  // its own row between its left and right edges, and on the rows below that
+  // still leave such room; a container stops at its first contained rect.
+  // The all-pairs answer at any length, and runs side by side on one long
+  // line cost one comparison each, not the line's length.
   function dropContainerRects(rects) {
-    if (rects.length < 2) return rects;
-    return rects.filter(function(a) {
-      var aArea = (a.width || 0) * (a.height || 0);
-      for (var i = 0; i < rects.length; i++) {
-        var b = rects[i];
-        if (b === a) continue;
-        var bArea = (b.width || 0) * (b.height || 0);
-        if (bArea >= aArea) continue; // only a STRICTLY larger box is a container
-        if (
-          a.left <= b.left
-          && a.top <= b.top
-          && rectRight(a) >= rectRight(b)
-          && rectBottom(a) >= rectBottom(b)
-        ) return false;
+    var n = rects.length;
+    if (n < 2) return rects;
+    var top = new Float64Array(n);
+    var left = new Float64Array(n);
+    var right = new Float64Array(n);
+    var bottom = new Float64Array(n);
+    var order = [];
+    var minHeight = Infinity;
+    for (var i = 0; i < n; i++) {
+      top[i] = rects[i].top;
+      left[i] = rects[i].left;
+      right[i] = rectRight(rects[i]);
+      bottom[i] = rectBottom(rects[i]);
+      minHeight = Math.min(minHeight, bottom[i] - top[i]);
+      order.push(i);
+    }
+    order.sort(function(p, q) { return top[p] - top[q] || left[p] - left[q]; });
+    // The first place in ORDER at or after (T, L) in (top, left) order.
+    function seek(t, l) {
+      var lo = 0;
+      var hi = n;
+      while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        var o = order[mid];
+        if (top[o] < t || (top[o] === t && left[o] < l)) lo = mid + 1; else hi = mid;
       }
-      return true;
-    });
+      return lo;
+    }
+    var dropped = new Uint8Array(n);
+    for (var k = 0; k < n; k++) {
+      var a = order[k];
+      var m;
+      for (m = seek(top[a], left[a]); m < n && top[order[m]] === top[a] && left[order[m]] <= right[a]; m++) {
+        if (m !== k && containsSmaller(rects[a], rects[order[m]])) { dropped[a] = 1; break; }
+      }
+      if (dropped[a]) continue;
+      // Half a pixel of slack: rounding must never hide a rect that fits.
+      for (m = seek(top[a], Infinity); m < n && top[order[m]] <= bottom[a] - minHeight + 0.5; m++) {
+        if (containsSmaller(rects[a], rects[order[m]])) { dropped[a] = 1; break; }
+      }
+    }
+    return rects.filter(function(rect, i) { return !dropped[i]; });
   }
 
-  // Client rects for a range, BOUNDED at the source: a huge drag-selection or
-  // redline can yield thousands of client rects (only the selection TEXT is
-  // capped, never the Range extent), and this runs per range target per rAF
-  // reconcile and per click hit-test. Only the paintable prefix (at most
-  // MAX_HIGHLIGHT_RECTS) is ever materialized — so the zero-size and
-  // containment filters below operate on at most 48 entries — and the
-  // marker's TRUE last rect (m12) is read directly by index off the live
-  // DOMRectList, never by collecting the whole list.
-  function rangeClientRects(range) {
+  // Whether rect A strictly contains rect B: only a STRICTLY larger box is a
+  // container.
+  function containsSmaller(a, b) {
+    if (!b || (b.width || 0) * (b.height || 0) >= (a.width || 0) * (a.height || 0)) return false;
+    return a.left <= b.left && a.top <= b.top && rectRight(a) >= rectRight(b) && rectBottom(a) >= rectBottom(b);
+  }
+
+  // Client rects for a range, bounded by the screen, never by the selection:
+  // a cap on the selection left a long selection's tail unpainted,
+  // unclickable and unprinted. Every rect is collected (getClientRects() is
+  // itself linear in them), containment is decided over the whole list, and
+  // only then does SCOPE keep what its caller needs: the rects on screen
+  // within the cull margin (undefined: the render pass, the draft highlight),
+  // those under a click ({x, y}: click-to-select), or all of them ('all': the
+  // print layer). LAST is the TRUE last client rect (the marker's anchor,
+  // m12); TAIL is the last paintable rect of the whole range, its fallback.
+  function rangeClientRects(range, scope) {
     var out = [];
     var lastRaw = null;
-    if (!range) return { rects: out, last: null };
+    var tail = null;
+    if (!range) return { rects: out, last: null, tail: null };
     if (typeof range.getClientRects === 'function') {
       try {
         var list = range.getClientRects();
-        for (var i = 0; i < list.length && out.length < MAX_HIGHLIGHT_RECTS; i++) out.push(list[i]);
+        for (var i = 0; i < list.length; i++) out.push(list[i]);
         if (list.length) lastRaw = list[list.length - 1];
       } catch (ex) {}
     }
@@ -2569,21 +2612,35 @@ ${SANDBOX_SHIM_SCRIPT}
       } catch (ex2) {}
     }
     if (layoutActive()) {
+      // Only a rect with area paints, and only one with area may count as
+      // contained: a range ending at offset 0 of the next text node lists a
+      // zero-width rect on its last run's edge, which made the containment
+      // filter drop that run (a one-run selection painted nothing).
       out = out.filter(function(rect) {
-        return (rect.width || 0) > 0 || (rect.height || 0) > 0;
+        return (rect.width || 0) > 0 && (rect.height || 0) > 0;
       });
       out = dropContainerRects(out);
+      tail = out.length ? out[out.length - 1] : null;
+      if (scope === undefined) {
+        var vw = window.innerWidth;
+        var vh = window.innerHeight;
+        out = out.filter(function(rect) { return !rectOffViewport(rect, vw, vh); });
+      } else if (scope !== 'all') {
+        out = out.filter(function(rect) {
+          return scope.x >= rect.left && scope.x <= rectRight(rect) && scope.y >= rect.top && scope.y <= rectBottom(rect);
+        });
+      }
     }
-    return { rects: out, last: lastRaw };
+    if (scope === undefined && out.length > MAX_HIGHLIGHT_RECTS) out = out.slice(0, MAX_HIGHLIGHT_RECTS);
+    return { rects: out, last: lastRaw, tail: tail };
   }
 
   // Range paint/projection geometry, shared by the overlay render, the print
-  // layer, and highlight click hit-testing: clip-tested painted rects
-  // (capped), the TRUE last client rect (marker anchor — never the capped
-  // list's 48th rect), and the clipped union (marker association; extended
-  // to the last rect so the tail of a cap-truncated selection still
-  // associates its marker).
-  function rangeVisualGeometry(range) {
+  // layer, and highlight click hit-testing: the clip-tested rects SCOPE keeps
+  // (rangeClientRects), the TRUE last client rect (the marker's anchor), and
+  // the clipped union (marker association; extended to the last rect so a
+  // tail off screen still associates its marker).
+  function rangeVisualGeometry(range, scope) {
     var rangeEl = range && range.startContainer
       ? (range.startContainer.nodeType === 1
         ? range.startContainer
@@ -2592,20 +2649,20 @@ ${SANDBOX_SHIM_SCRIPT}
     if (rangeEl && targetStyleHidden(rangeEl)) {
       return { paint: [], last: null, vis: null, hidden: true };
     }
-    var collected = rangeClientRects(range);
+    var collected = rangeClientRects(range, scope);
     var all = collected.rects;
     if (!all.length) return { paint: [], last: null, vis: null, hidden: false };
     var bounds = clipBoundsFor(rangeEl);
     var paint = [];
-    for (var i = 0; i < all.length && paint.length < MAX_HIGHLIGHT_RECTS; i++) {
+    for (var i = 0; i < all.length; i++) {
       var clipped = clipRect(all[i], bounds);
       if (clipped) paint.push(clipped);
     }
     var last = collected.last;
     if (layoutActive() && last && !(last.width || 0) && !(last.height || 0)) {
       // A zero-size trailing rect (collapsed tail) has no visual anchor —
-      // fall back to the last collected paintable rect.
-      last = all[all.length - 1];
+      // fall back to the last paintable rect of the whole range.
+      last = collected.tail;
     }
     var union = unionOfRects(last ? all.concat([last]) : all);
     var vis = bounds
@@ -5054,7 +5111,7 @@ ${SANDBOX_SHIM_SCRIPT}
       for (var targetIndex = 0; targetIndex < record.targets.length; targetIndex++) {
         var target = record.targets[targetIndex];
         if (target.kind !== 'range' || !rangeAlive(target.range)) continue;
-        var geometry = rangeVisualGeometry(target.range);
+        var geometry = rangeVisualGeometry(target.range, { x: x, y: y });
         for (var i = 0; i < geometry.paint.length; i++) {
           var rect = geometry.paint[i];
           if ((rect.width || 0) <= 0 || (rect.height || 0) <= 0) continue;
@@ -6414,7 +6471,7 @@ ${SANDBOX_SHIM_SCRIPT}
         for (var targetIndex = 0; targetIndex < record.targets.length; targetIndex++) {
           var target = record.targets[targetIndex];
           if (target.kind !== 'range' || !rangeAlive(target.range)) continue;
-          var geometry = rangeVisualGeometry(target.range);
+          var geometry = rangeVisualGeometry(target.range, 'all');
           for (var i = 0; i < geometry.paint.length; i++) {
             var rect = geometry.paint[i];
             var div = document.createElement('div');

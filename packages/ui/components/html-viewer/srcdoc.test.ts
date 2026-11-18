@@ -2750,6 +2750,23 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     }
   }
 
+  /** Under layout, every Range lists RECTS as its client rects while RUN runs; the marks and the page go after,
+   * even when RUN fails, so a failure never leaks into the next test. */
+  async function withClientRects(rects: DOMRect[], run: () => void | Promise<void>) {
+    const originalGetClientRects = Range.prototype.getClientRects;
+    await withLayout(async () => {
+      (Range.prototype as unknown as { getClientRects: () => DOMRect[] }).getClientRects = () => rects;
+      try {
+        await run();
+      } finally {
+        (Range.prototype as { getClientRects: typeof originalGetClientRects }).getClientRects =
+          originalGetClientRects;
+        postBridge({ type: "plannotator-bridge-clear-marks" });
+        document.body.replaceChildren();
+      }
+    });
+  }
+
   test("annotation overlay is layout-neutral: page DOM untouched, host outside body, pointer-transparent", async () => {
     document.body.innerHTML = [
       '<div id="hero"><p class="intro">Anchor target text</p><p>Second paragraph</p></div>',
@@ -4408,7 +4425,7 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     document.body.replaceChildren();
   });
 
-  test("marker anchors to the TRUE last client rect past the paint cap (m12)", async () => {
+  test("a selection of 60 rects on screen paints all 60, the marker at its TRUE last client rect (m12)", async () => {
     document.body.innerHTML = "<p>Long wrapped selection</p>";
     const originalGetClientRects = Range.prototype.getClientRects;
     await withLayout(async () => {
@@ -4424,13 +4441,13 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
           annotationType: "comment",
         });
         await flushOverlay();
-        // Painting caps at 48 rects…
+        // The screen bounds the work, never the selection: every rect on
+        // screen is painted…
         const painted = visibleHighlights("pn-hl-comment").filter(
           (el) => el.getAttribute("data-annotation-id") === "long-ann",
         );
-        expect(painted.length).toBe(48);
-        // …but the marker sits at the selection TAIL (60th rect), not at the
-        // 48th rect mid-selection.
+        expect(painted.length).toBe(60);
+        // …and the marker sits at the selection TAIL (60th rect).
         const longMarkers = markersFor("long-ann");
         expect(longMarkers.length).toBe(1);
         expect(longMarkers[0]!.style.left).toBe("110px");
@@ -4497,15 +4514,13 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     document.body.replaceChildren();
   });
 
-  test("rect collection is capped at 48 with the containment filter, marker at the true tail (perf bound)", async () => {
+  test("past 48 rects, containment still drops a container box; the marker stays at the true tail", async () => {
     document.body.innerHTML = "<p>Huge wrapped selection</p>";
     const originalGetClientRects = Range.prototype.getClientRects;
     await withLayout(async () => {
-      // 60 rects: index 0 is a border box strictly containing lines 1..10;
-      // only the first 48 may ever be materialized (a huge selection can
-      // yield thousands of rects per reconcile frame), the containment
-      // filter runs on that capped list, and the marker still anchors the
-      // TRUE final rect read by index off the live list.
+      // 60 rects: index 0 is a border box strictly containing lines 1..10.
+      // Containment is exact at any length, and the marker anchors the TRUE
+      // final rect.
       const rects: DOMRect[] = [rectOf(10, 10, 100, 50)];
       for (let i = 1; i < 60; i++) rects.push(rectOf(10, 10 + (i - 1) * 5, 100, 5));
       (Range.prototype as unknown as { getClientRects: () => DOMRect[] }).getClientRects = () =>
@@ -4521,10 +4536,10 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
         const painted = visibleHighlights("pn-hl-comment").filter(
           (el) => el.getAttribute("data-annotation-id") === "huge-ann",
         );
-        // 48 collected minus the containment-dropped border box.
-        expect(painted.length).toBe(47);
+        // All 60 minus the containment-dropped border box.
+        expect(painted.length).toBe(59);
         expect(painted.some((el) => el.style.height === "50px")).toBe(false);
-        // True tail: rects[59] (top 300, height 5) — not the 48th entry.
+        // True tail: rects[59] (top 300, height 5).
         const hugeMarkers = markersFor("huge-ann");
         expect(hugeMarkers.length).toBe(1);
         expect(hugeMarkers[0]!.style.left).toBe("110px");
@@ -4536,6 +4551,141 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     });
     postBridge({ type: "plannotator-bridge-clear-marks" });
     document.body.replaceChildren();
+  });
+
+  /** N lines of five pixels from y = 10, one rect each. */
+  const lineRects = (n: number) => Array.from({ length: n }, (_, i) => rectOf(10, 10 + i * 5, 100, 5));
+
+  const markRange = async (id: string, text: string) => {
+    postBridge({ type: "plannotator-bridge-find-and-mark", id, originalText: text, annotationType: "comment" });
+    await flushOverlay();
+  };
+
+  const paintedFor = (id: string) =>
+    visibleHighlights("pn-hl-comment").filter((el) => el.getAttribute("data-annotation-id") === id);
+
+  test("of 200 rects running past the viewport, those on screen are painted, the ones past the old 48 among them", async () => {
+    document.body.innerHTML = "<p>Long selection past the screen</p>";
+    const rects = lineRects(200);
+    await withClientRects(rects, async () => {
+      await markRange("past-ann", "Long selection past the screen");
+      const tops = paintedFor("past-ann").map((el) => parseFloat(el.style.top));
+      // On screen within the 64 px cull margin, and nothing below it.
+      const onScreen = rects.filter((r) => r.top <= window.innerHeight + 64).length;
+      expect(onScreen).toBeGreaterThan(48);
+      expect(onScreen).toBeLessThan(200);
+      expect(tops.length).toBe(onScreen);
+      expect(tops).toContain(10 + 60 * 5);
+    });
+  });
+
+  test("a selected block whose lines are all off screen paints nothing, not even its box, and shows no marker", async () => {
+    document.body.innerHTML = "<p>Block scrolled past</p>";
+    // The block's box reaches onto the screen; its 60 lines are all above it.
+    const rects = [rectOf(10, -900, 200, 1200), ...Array.from({ length: 60 }, (_, i) => rectOf(10, -900 + i * 5, 100, 5))];
+    await withClientRects(rects, async () => {
+      await markRange("above-ann", "Block scrolled past");
+      expect(paintedFor("above-ann").length).toBe(0);
+      expect(markersFor("above-ann").length).toBe(0);
+    });
+  });
+
+  test("a click on a line past the old 48 selects its annotation; a click in the dropped box, off every line, does not", async () => {
+    document.body.innerHTML = "<p>Clickable long selection</p>";
+    postBridge({ type: "plannotator-bridge-set-vim-mode", enabled: false });
+    postBridge({ type: "plannotator-bridge-set-input-method", method: "drag" });
+    const clickBody = (x: number, y: number) => {
+      document.body.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    };
+    // A box wider than its 60 lines, first in content order.
+    await withClientRects([rectOf(10, 10, 300, 400), ...lineRects(60)], async () => {
+      await markRange("tail-click", "Clickable long selection");
+      expect(await collectMessages(["plannotator-bridge-mark-click"], () => clickBody(50, 10 + 55 * 5 + 2))).toEqual([
+        { type: "plannotator-bridge-mark-click", id: "tail-click" },
+      ]);
+      expect((await collectMessages(["plannotator-bridge-mark-click"], () => clickBody(250, 100))).length).toBe(0);
+    });
+  });
+
+  test("the print layer holds every rect of a selection, on screen or not", async () => {
+    document.body.innerHTML = "<p>Printed long selection</p>";
+    await withClientRects(lineRects(200), async () => {
+      await markRange("print-all", "Printed long selection");
+      window.dispatchEvent(new Event("beforeprint"));
+      const layer = document.querySelector<HTMLElement>("[data-plannotator-print-layer]");
+      if (!layer) throw new Error("print layer missing");
+      expect(layer.childNodes.length).toBe(200);
+      window.dispatchEvent(new Event("afterprint"));
+    });
+  });
+
+  test("an inline element's fragments listed before its runs are dropped, in a short selection and a long one", async () => {
+    // A padded link wrapping onto a second line: getClientRects() lists both
+    // of its border fragments, then its two text runs, each fragment
+    // strictly containing one run. Exact containment drops both fragments at
+    // any length, so nothing is painted twice.
+    const link = [rectOf(300, 400, 200, 22), rectOf(10, 420, 150, 22), rectOf(301, 401, 198, 20), rectOf(11, 421, 148, 20)];
+    for (const rects of [link, [...lineRects(60), ...link]]) {
+      document.body.innerHTML = "<p>Wrapped padded link</p>";
+      await withClientRects(rects, async () => {
+        await markRange("link-ann", "Wrapped padded link");
+        const heights = paintedFor("link-ann").map((el) => el.style.height);
+        expect(heights.length).toBe(rects.length - 2);
+        expect(heights).not.toContain("22px");
+      });
+    }
+  });
+
+  test("a box on the same top as the run it contains, listed after it, is still dropped", async () => {
+    // Ties on top: the run comes first in content order and starts where the
+    // box does, so a scan that skipped equal tops, or started past the box,
+    // would keep the box.
+    document.body.innerHTML = "<p>Tied tops</p>";
+    await withClientRects([rectOf(10, 10, 100, 20), rectOf(10, 10, 300, 24)], async () => {
+      await markRange("tie-ann", "Tied tops");
+      expect(paintedFor("tie-ann").map((el) => el.style.width)).toEqual(["100px"]);
+    });
+  });
+
+  test("the marker stays on the TRUE last client rect: off screen, past a zero-size end, it shows no marker", async () => {
+    // A painted last rect on screen must not stand in for the true tail, nor
+    // for its zero-size end's fallback (the last paintable rect of the whole
+    // range, here off screen).
+    document.body.innerHTML = "<p>Tail below the screen</p>";
+    await withClientRects([...lineRects(60), rectOf(10, 2000, 100, 5), rectOf(0, 0, 0, 0)], async () => {
+      await markRange("tail-ann", "Tail below the screen");
+      expect(paintedFor("tail-ann").length).toBe(60);
+      expect(markersFor("tail-ann").length).toBe(0);
+    });
+  });
+
+  test("the 2,048 bound counts rects on screen only: thousands above the screen leave the visible ones painted", async () => {
+    document.body.innerHTML = "<p>Rects above the screen</p>";
+    const above = Array.from({ length: 2050 }, (_, i) => rectOf((i % 100) * 10, -3000 + Math.floor(i / 100) * 5, 10, 5));
+    await withClientRects([...above, ...lineRects(50)], async () => {
+      await markRange("above-cap", "Rects above the screen");
+      expect(paintedFor("above-cap").length).toBe(50);
+    });
+  });
+
+  test("a range ending at offset 0 of the next text node still paints its last run", async () => {
+    // Chrome lists a zero-width rect for that empty end, on the last run's
+    // right edge: counted as contained, it took the run out of the highlight.
+    document.body.innerHTML = "<p>alpha beta</p>";
+    await withClientRects([rectOf(0, 20, 48, 23), rectOf(48, 20, 40, 23), rectOf(88, 20, 0, 23)], async () => {
+      await markRange("edge-ann", "alpha beta");
+      expect(paintedFor("edge-ann").map((el) => el.style.width)).toEqual(["48px", "40px"]);
+    });
+  });
+
+  test("more than 2,048 rects on screen paint 2,048, the deliberate safety bound", async () => {
+    document.body.innerHTML = "<p>Thousands of rects</p>";
+    // 2,100 rects of 10 by 5 pixels in rows of 100, all on screen, none containing another.
+    const rects = Array.from({ length: 2100 }, (_, i) => rectOf((i % 100) * 10, Math.floor(i / 100) * 5, 10, 5));
+    await withClientRects(rects, async () => {
+      await markRange("bound-ann", "Thousands of rects");
+      expect(paintedFor("bound-ann").length).toBe(2048);
+    });
   });
 
   test("the page observer watches documentElement; body swaps unlock re-search (M3 scope)", async () => {
