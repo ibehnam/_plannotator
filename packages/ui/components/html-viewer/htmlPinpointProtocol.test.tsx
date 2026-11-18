@@ -185,6 +185,17 @@ describe.if(hasDom)('parseBridgeMessage selection additions', () => {
     expect((parsed as { anchor?: unknown }).anchor).toBeUndefined();
   });
 
+  test('a text position is kept when well formed, and dropped without rejecting the selection when not', () => {
+    const textPosition = { anchor: { selector: '#p8-37', tagName: 'span', text: 'both ' }, start: 12, end: 16 };
+    const message = { type: 'plannotator-bridge-selection', text: 'both', rect };
+    expect(hookModule!.parseBridgeMessage({ ...message, textPosition })).toMatchObject({ text: 'both', textPosition });
+    for (const bad of [{ ...textPosition, start: -1 }, { ...textPosition, end: 12 }, { ...textPosition, anchor: { selector: 42 } }, '#p8-37 12-16']) {
+      const parsed = hookModule!.parseBridgeMessage({ ...message, textPosition: bad });
+      expect(parsed).toMatchObject({ text: 'both' });
+      expect(parsed).not.toHaveProperty('textPosition');
+    }
+  });
+
   test('truncation never splits a surrogate pair at the cap boundary', () => {
     // An astral character straddling the cut would leave a lone high
     // surrogate that turns into U+FFFD once UTF-8-encoded (drafts, feedback,
@@ -257,6 +268,13 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     });
     const iframe = host.querySelector<HTMLIFrameElement>('iframe');
     if (!iframe?.contentWindow) throw new Error('HTML iframe missing');
+    const postedToIframe: Array<Record<string, unknown>> = [];
+    const realPost = iframe.contentWindow.postMessage.bind(iframe.contentWindow);
+    (iframe.contentWindow as unknown as { postMessage: (data: unknown) => void }).postMessage =
+      ((data: unknown, ...rest: unknown[]) => {
+        if (data && typeof data === 'object') postedToIframe.push(data as Record<string, unknown>);
+        return (realPost as (...args: unknown[]) => unknown)(data, ...rest);
+      }) as typeof iframe.contentWindow.postMessage;
     const postSelection = async (data: Record<string, unknown>) => {
       await act(async () => {
         window.dispatchEvent(new MessageEvent('message', {
@@ -265,7 +283,7 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
         }));
       });
     };
-    return { postSelection };
+    return { postSelection, postedToIframe };
   }
 
   const selectionMessage = {
@@ -582,6 +600,38 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     });
     expect(added[0]!.htmlAnchor?.point).toBeUndefined();
   });
+
+  const bothSelection = {
+    type: 'plannotator-bridge-selection',
+    text: 'both',
+    rect: { top: 10, left: 10, width: 40, height: 20 },
+    textPosition: { anchor: { selector: '#p8-37', tagName: 'span', text: 'both ' }, start: 0, end: 4 },
+  };
+
+  test('a text selection\'s position rides onto its comment, and create-mark gives it to the bridge', async () => {
+    const added: Annotation[] = [];
+    const { postSelection, postedToIframe } = await mountViewer({ mode: 'comment', onAdd: (ann) => added.push(ann) });
+    await postSelection(bothSelection);
+    await typeComment('Which two?');
+    await saveComment();
+    expect(added.length).toBe(1);
+    expect(added[0]!.htmlTextPosition).toEqual(bothSelection.textPosition);
+    expect(postedToIframe.find((m) => m.type === 'plannotator-bridge-create-mark'))
+      .toMatchObject({ textPosition: bothSelection.textPosition });
+  });
+
+  test('a position never attaches to another selection: a later pin without one commits without one', async () => {
+    const added: Annotation[] = [];
+    const { postSelection, postedToIframe } = await mountViewer({ mode: 'comment', onAdd: (ann) => added.push(ann) });
+    await postSelection(bothSelection);
+    await postSelection({ ...selectionMessage, pinpoint: true });
+    await typeComment('the pin');
+    await saveComment();
+    expect(added.length).toBe(1);
+    expect(added[0]!.originalText).toBe('Pinpoint target');
+    expect(added[0]!.htmlTextPosition).toBeUndefined();
+    expect(postedToIframe.find((m) => m.type === 'plannotator-bridge-create-mark')).not.toHaveProperty('textPosition');
+  });
 });
 
 describe.if(hasDom)('ordered saved-annotation sync (placed-marker numbering)', () => {
@@ -636,6 +686,18 @@ describe.if(hasDom)('ordered saved-annotation sync (placed-marker numbering)', (
       createdA,
     } as Annotation;
   }
+
+  test('find-and-mark gives the bridge a text selection\'s saved position, and nothing for one without', async () => {
+    const position = { anchor: { selector: '#p8-37', tagName: 'span', text: 'both ' }, start: 0, end: 4 };
+    const { postReady, postedToIframe } = await mountWithAnnotations([
+      { ...ann('pos-1', 1), htmlTextPosition: position },
+      ann('plain-1', 2),
+    ]);
+    await postReady();
+    const restores = postedToIframe.filter((m) => m.type === 'plannotator-bridge-find-and-mark');
+    expect(restores.find((m) => m.id === 'pos-1')!.textPosition).toEqual(position);
+    expect(restores.find((m) => m.id === 'plain-1')!.textPosition).toBeUndefined();
+  });
 
   test('on bridge ready, the ordered collection syncs export-matching numbers (globals occupy slots)', async () => {
     const { AnnotationType } = await import('../../types');

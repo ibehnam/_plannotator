@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, type RefObject } from "react";
-import { AnnotationType, type Annotation, type EditorMode, type HostDraft, type HtmlAnnotationTarget, type HtmlElementAnchor, type HtmlElementContext, type ImageAttachment } from "../../types";
+import { AnnotationType, type Annotation, type EditorMode, type HostDraft, type HtmlAnnotationTarget, type HtmlElementAnchor, type HtmlElementContext, type HtmlTextPosition, type ImageAttachment } from "../../types";
 import { THUMBS_UP_LABEL, type QuickLabel } from "../../utils/quickLabels";
 import { getIdentity } from "../../utils/identity";
 import type {
@@ -17,6 +17,7 @@ import {
 } from "../../utils/richClipboard";
 import {
   parseHtmlElementContext,
+  parseHtmlTextPosition,
   MAX_ELEMENT_CONTEXT_BYTES,
   MAX_PAGE_URL_LENGTH,
 } from "@plannotator/core/html-anchor";
@@ -104,6 +105,8 @@ interface BridgeSelectionMessage {
   textCut?: boolean;
   /** The `restore-draft` this selection answers (a host's `reopenComment`). */
   restoreId?: string;
+  /** Where a text selection stands (validated), so a repeated quote keeps its own occurrence. */
+  textPosition?: HtmlTextPosition;
 }
 
 /** The bridge's answer to `rich-copy-request`: the pending range's markup
@@ -406,6 +409,12 @@ export function parseHtmlElementAnchor(value: unknown): HtmlElementAnchor | null
   return { selector, tagName, text, ...(point ? { point } : {}) };
 }
 
+/** The pending selection's position when it was taken on TEXT itself, else none: a position is
+ *  kept with its quote, so it can never attach to another selection (a pin, a later drag). */
+function positionOn(pending: { text: string; position: HtmlTextPosition } | null, text: string): HtmlTextPosition | undefined {
+  return pending && pending.text === text ? pending.position : undefined;
+}
+
 /** A `restore-draft` id (the host mints it): short, or none. */
 function parseRestoreId(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : null;
@@ -470,6 +479,7 @@ export function parseBridgeMessage(value: unknown): BridgeMessage | null {
         targetLabel: parseTargetLabel(value.targetLabel),
         context: parseHtmlElementContext(value.context),
         ...(parseRestoreId(value.restoreId) ? { restoreId: parseRestoreId(value.restoreId)! } : {}),
+        ...(parseHtmlTextPosition(value.textPosition) ? { textPosition: parseHtmlTextPosition(value.textPosition)! } : {}),
       };
     }
     case `${PREFIX}restore-draft-missing`: {
@@ -663,6 +673,8 @@ export function useHtmlAnnotation({
   // annotation so restoration can resolve the exact element again.
   const pendingAnchorRef = useRef<HtmlElementAnchor | null>(null);
   const pendingContextRef = useRef<HtmlElementContext | null>(null);
+  // Where the pending text selection stands, with its quote (positionOn).
+  const pendingPositionRef = useRef<{ text: string; position: HtmlTextPosition } | null>(null);
   const draftTargetsRef = useRef<HtmlDraftTarget[]>(draftTargets);
   draftTargetsRef.current = draftTargets;
   const onBridgePointerRef = useRef(onBridgePointer);
@@ -925,6 +937,7 @@ export function useHtmlAnnotation({
         pendingTextRef.current = message.text;
         pendingAnchorRef.current = message.anchor ?? null;
         pendingContextRef.current = message.context ?? null;
+        pendingPositionRef.current = message.textPosition ? { text: message.text, position: message.textPosition } : null;
         setDraftTargets([]); // a new selection always starts a fresh draft
         const reopen = message.restoreId && reopenRef.current?.id === message.restoreId ? reopenRef.current : null;
         if (reopen) reopenRef.current = null;
@@ -947,6 +960,7 @@ export function useHtmlAnnotation({
               createdA: Date.now(),
               htmlAnchor: message.anchor,
               elementContext: message.context,
+              ...(message.textPosition ? { htmlTextPosition: message.textPosition } : {}),
             },
             intent: message.pinpoint || reopen ? "compose" : "selection",
             label: message.targetLabel,
@@ -1258,7 +1272,8 @@ export function useHtmlAnnotation({
 
       const id = nextHtmlAnnId();
       mintedIdsRef.current.add(id);
-      post({ type: `${PREFIX}create-mark`, id, annotationType: "deletion" });
+      const position = positionOn(pendingPositionRef.current, text);
+      post({ type: `${PREFIX}create-mark`, id, annotationType: "deletion", ...(position ? { textPosition: position } : {}) });
       onAddRef.current?.({
         id,
         blockId: "",
@@ -1270,6 +1285,7 @@ export function useHtmlAnnotation({
         createdA: Date.now(),
         htmlAnchor: pendingAnchorRef.current ?? undefined,
         elementContext: pendingContextRef.current ?? undefined,
+        ...(position ? { htmlTextPosition: position } : {}),
       });
 
       setToolbarState(null);
@@ -1326,7 +1342,8 @@ export function useHtmlAnnotation({
 
       const id = nextHtmlAnnId();
       mintedIdsRef.current.add(id);
-      post({ type: `${PREFIX}create-mark`, id, annotationType: "comment" });
+      const position = positionOn(pendingPositionRef.current, text);
+      post({ type: `${PREFIX}create-mark`, id, annotationType: "comment", ...(position ? { textPosition: position } : {}) });
       onAddRef.current?.({
         id,
         blockId: "",
@@ -1340,6 +1357,7 @@ export function useHtmlAnnotation({
         htmlAnchor: pendingAnchorRef.current ?? undefined,
         elementContext: pendingContextRef.current ?? undefined,
         htmlAdditionalTargets: additionalTargets,
+        ...(position ? { htmlTextPosition: position } : {}),
       });
 
       setCommentPopover(null);
@@ -1417,7 +1435,8 @@ export function useHtmlAnnotation({
       if (!text) return;
       const id = nextHtmlAnnId();
       mintedIdsRef.current.add(id);
-      post({ type: `${PREFIX}create-mark`, id, annotationType: "comment" });
+      const position = positionOn(pendingPositionRef.current, text);
+      post({ type: `${PREFIX}create-mark`, id, annotationType: "comment", ...(position ? { textPosition: position } : {}) });
       onAddRef.current?.({
         id,
         blockId: "",
@@ -1432,6 +1451,7 @@ export function useHtmlAnnotation({
         createdA: Date.now(),
         htmlAnchor: pendingAnchorRef.current ?? undefined,
         elementContext: pendingContextRef.current ?? undefined,
+        ...(position ? { htmlTextPosition: position } : {}),
       });
       clearState();
       pendingTextRef.current = "";
@@ -1477,6 +1497,7 @@ export function useHtmlAnnotation({
       id,
       text: quote,
       ...(annotation.htmlAnchor ? { anchor: annotation.htmlAnchor } : {}),
+      ...(annotation.htmlTextPosition ? { textPosition: annotation.htmlTextPosition } : {}),
     };
   }, []);
 
@@ -1496,6 +1517,7 @@ export function useHtmlAnnotation({
             ...(t.context ? { context: t.context } : {}),
           }))
         : undefined;
+    const position = positionOn(pendingPositionRef.current, text);
     return {
       id: "peek",
       blockId: "",
@@ -1509,6 +1531,7 @@ export function useHtmlAnnotation({
       htmlAnchor: pendingAnchorRef.current ?? undefined,
       elementContext: pendingContextRef.current ?? undefined,
       htmlAdditionalTargets: additionalTargets,
+      ...(position ? { htmlTextPosition: position } : {}),
     };
   }, []);
 
@@ -1555,6 +1578,9 @@ export function useHtmlAnnotation({
           // and scopes the text search to it, falling back to document-wide.
           anchor: ann.htmlAnchor,
           additionalAnchors: additionalAnchors.length ? additionalAnchors : undefined,
+          // A text selection's saved place: the bridge binds that occurrence
+          // when its text is still there, and searches as before when not.
+          textPosition: ann.htmlTextPosition,
         });
       }
     },

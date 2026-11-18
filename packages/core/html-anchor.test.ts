@@ -17,7 +17,9 @@ import {
   DEFAULT_HTML_ANCHOR_MAX_BYTES,
   MAX_ELEMENT_CONTEXT_BYTES,
   MAX_HTML_ADDITIONAL_TARGETS,
+  MAX_HTML_TEXT_POSITION_OFFSET,
   parseHtmlElementContext,
+  parseHtmlTextPosition,
   projectHostThreads,
   type HostThread,
 } from "./html-anchor";
@@ -472,5 +474,39 @@ describe("parseHtmlElementContext", () => {
 
     // With room to spare it is kept.
     expect(parseHtmlElementContext({ ...base, sourceName, page: { url: "/home" } })?.sourceName).toBe(sourceName);
+  });
+});
+
+describe("parseHtmlTextPosition", () => {
+  const anchor = { selector: "#p8-37", tagName: "span", text: "both " };
+
+  test("a well-formed position comes back as it was, its anchor as parseHtmlElementAnchor keeps it", () => {
+    expect(parseHtmlTextPosition({ anchor, start: 12, end: 16 })).toEqual({ anchor, start: 12, end: 16 });
+    // The end may run on past the element, up to the cap.
+    expect(parseHtmlTextPosition({ anchor, start: 0, end: MAX_HTML_TEXT_POSITION_OFFSET })).toEqual({
+      anchor, start: 0, end: MAX_HTML_TEXT_POSITION_OFFSET,
+    });
+    // Unknown keys are not carried along.
+    expect(parseHtmlTextPosition({ anchor, start: 1, end: 2, extra: "x" })).toEqual({ anchor, start: 1, end: 2 });
+  });
+
+  test("anything else is refused whole: the selection then restores by searching for its quote", () => {
+    const refused: unknown[] = [
+      null,
+      "#p8-37 12-16",
+      { start: 1, end: 2 },
+      { anchor: { selector: "", tagName: "span" }, start: 1, end: 2 },
+      { anchor: { selector: "#a", tagName: "span", text: "x".repeat(401) }, start: 1, end: 2 },
+      { anchor, start: -1, end: 2 },
+      { anchor, start: 2, end: 2 },
+      { anchor, start: 3, end: 2 },
+      { anchor, start: 1.5, end: 2 },
+      { anchor, start: 1, end: Number.POSITIVE_INFINITY },
+      { anchor, start: Number.NaN, end: 2 },
+      { anchor, start: "1", end: 2 },
+      { anchor, start: 1 },
+      { anchor, start: 0, end: MAX_HTML_TEXT_POSITION_OFFSET + 1 },
+    ];
+    for (const value of refused) expect(parseHtmlTextPosition(value)).toBeNull();
   });
 });

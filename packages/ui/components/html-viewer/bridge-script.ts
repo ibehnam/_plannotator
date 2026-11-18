@@ -742,6 +742,7 @@ ${SANDBOX_SHIM_SCRIPT}
     clearHoverHighlight();
 
     var rect = range.getBoundingClientRect();
+    var textPosition = extras || text.length < fullText.length ? null : textPositionOf(range, text);
     pendingRange = range;
     pendingCopyText = fullText;
     pendingSelection = {
@@ -765,6 +766,10 @@ ${SANDBOX_SHIM_SCRIPT}
       // toolbar's rich-text Copy). Optional and additive: an older bridge
       // omits it and Copy stays plain text, so no protocol version bump.
       richCopy: (extras && extras.pinpoint) ? undefined : true,
+      // Where the selection stands, so a quote the page holds more than once
+      // keeps its own occurrence. Optional and additive, as richCopy is: an
+      // older parent ignores it, so no protocol version bump.
+      textPosition: textPosition || undefined,
       // The quote above was cut to MAX_SELECTION_TEXT: a plain-text copy made
       // from it alone (no answer to rich-copy-request) says so.
       textCut: text.length < fullText.length ? true : undefined,
@@ -886,7 +891,8 @@ ${SANDBOX_SHIM_SCRIPT}
             record = ensureAnnRecord(id, annType, {
               originalText: pendingSelection.text || '',
               anchor: null,
-              additionalAnchors: null
+              additionalAnchors: null,
+              textPosition: e.data.textPosition || null
             });
             addRangeTarget(record, committedRange, pendingSelection.text || '', false);
           }
@@ -940,7 +946,8 @@ ${SANDBOX_SHIM_SCRIPT}
         e.data.annotationType || 'comment',
         typeof e.data.originalText === 'string' ? e.data.originalText : '',
         e.data.anchor,
-        e.data.additionalAnchors
+        e.data.additionalAnchors,
+        e.data.textPosition
       );
       postToParent({
         type: PREFIX + 'mark-applied',
@@ -1957,7 +1964,7 @@ ${SANDBOX_SHIM_SCRIPT}
 
   // One record per committed annotation. Its targets are live projections;
   // its params are the durable data they re-resolve from after mutations.
-  var annRecords = []; // { id, annType, params: { originalText, anchor, additionalAnchors }, targets }
+  var annRecords = []; // { id, annType, params: { originalText, anchor, additionalAnchors, textPosition }, targets }
   var annNumbers = null; // Map(id -> display number) synced from the parent's ordered collection
   var focusedAnnotationId = null;
   var focusFlashTimer = 0;
@@ -2078,41 +2085,141 @@ ${SANDBOX_SHIM_SCRIPT}
     }
   }
 
-  // Resolve one contiguous document Range for the first occurrence of text.
-  // Overlay-owned text (labels, vim chrome) is skipped by IDENTITY so viewer
-  // chrome can never satisfy a page-text search.
-  function findTextRange(text, root) {
-    var scope = root || document.body;
-    if (!text || !scope) return null;
+  // The document's text under SCOPE: its text nodes in order, each with its
+  // offset in their joined text. Overlay-owned text (labels, vim chrome) is
+  // skipped by IDENTITY so viewer chrome can never satisfy a page-text search,
+  // nor count in a text position.
+  function textIndex(scope) {
     var walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, null);
-    var buffer = '';
+    var text = '';
     var nodes = [];
     while (walker.nextNode()) {
       var current = walker.currentNode;
       if (current.parentElement && isViewerOverlayNode(current.parentElement)) continue;
-      nodes.push({ node: current, start: buffer.length });
-      buffer += current.textContent;
+      nodes.push({ node: current, start: text.length });
+      text += current.textContent;
     }
-    var idx = buffer.indexOf(text);
-    if (idx === -1) return null;
-    var endIdx = idx + text.length;
+    return { text: text, nodes: nodes };
+  }
+
+  // The range over characters FROM to TO of INDEX's text, or null.
+  function rangeOver(index, from, to) {
     var startEntry = null;
     var endEntry = null;
-    for (var i = 0; i < nodes.length; i++) {
-      var entry = nodes[i];
+    for (var i = 0; i < index.nodes.length; i++) {
+      var entry = index.nodes[i];
       var nodeEnd = entry.start + entry.node.length;
-      if (!startEntry && idx < nodeEnd) startEntry = entry;
-      if (endIdx <= nodeEnd) { endEntry = entry; break; }
+      if (!startEntry && from < nodeEnd) startEntry = entry;
+      if (to <= nodeEnd) { endEntry = entry; break; }
     }
     if (!startEntry || !endEntry) return null;
     try {
       var range = document.createRange();
-      range.setStart(startEntry.node, idx - startEntry.start);
-      range.setEnd(endEntry.node, endIdx - endEntry.start);
+      range.setStart(startEntry.node, from - startEntry.start);
+      range.setEnd(endEntry.node, to - endEntry.start);
       return range;
     } catch (ex) {
       return null;
     }
+  }
+
+  // Resolve one contiguous document Range for the first occurrence of text.
+  function findTextRange(text, root) {
+    var scope = root || document.body;
+    if (!text || !scope) return null;
+    var index = textIndex(scope);
+    var idx = index.text.indexOf(text);
+    return idx === -1 ? null : rangeOver(index, idx, idx + text.length);
+  }
+
+  // The offset in INDEX's text of the boundary point (NODE, OFFSET): in a text
+  // node, its own; anywhere else, where the first text node at or after it
+  // starts. -1 for a point INDEX does not hold.
+  function textOffsetAt(index, node, offset) {
+    var i;
+    if (node.nodeType === 3) {
+      for (i = 0; i < index.nodes.length; i++) {
+        if (index.nodes[i].node === node) return index.nodes[i].start + offset;
+      }
+      return -1;
+    }
+    var point = document.createRange();
+    try { point.setStart(node, offset); } catch (ex) { return -1; }
+    for (i = 0; i < index.nodes.length; i++) {
+      if (point.comparePoint(index.nodes[i].node, 0) >= 0) return index.nodes[i].start;
+    }
+    return index.text.length;
+  }
+
+  // Where the first text node inside EL starts in INDEX's text, or -1.
+  function firstTextOffsetIn(index, el) {
+    for (var i = 0; i < index.nodes.length; i++) {
+      if (el.contains(index.nodes[i].node)) return index.nodes[i].start;
+    }
+    return -1;
+  }
+
+  // Whitespace never counts: Selection.toString() and the text nodes differ
+  // in it around line breaks and block boundaries.
+  function squashedText(text) {
+    return String(text || '').replace(/\\s+/g, '');
+  }
+
+  // Where a text selection stands, so a quote the page holds more than once
+  // restores on its own occurrence: the element its first character is in,
+  // anchored as a pin is, and its half-open offsets from that element's first
+  // character in the document's text, whitespace at either end left out.
+  // Null when those characters do not read QUOTE, whitespace aside, or the
+  // element has no anchor: the comment then restores by search, as before.
+  function textPositionOf(range, quote) {
+    try {
+      return measureTextPosition(range, quote);
+    } catch (ex) {
+      return null; // a position is optional: whatever measuring meets (a range across roots), the selection goes on
+    }
+  }
+
+  function measureTextPosition(range, quote) {
+    if (!document.body) return null;
+    var index = textIndex(document.body);
+    var from = textOffsetAt(index, range.startContainer, range.startOffset);
+    var to = textOffsetAt(index, range.endContainer, range.endOffset);
+    if (from < 0 || to < 0) return null;
+    while (from < to && /\\s/.test(index.text.charAt(from))) from++;
+    while (to > from && /\\s/.test(index.text.charAt(to - 1))) to--;
+    if (to <= from || squashedText(index.text.slice(from, to)) !== squashedText(quote)) return null;
+    var holder = null;
+    for (var i = 0; i < index.nodes.length && index.nodes[i].start <= from; i++) holder = index.nodes[i];
+    var el = holder && holder.node.parentElement;
+    var anchor = el ? buildElementAnchor(el) : null;
+    var base = anchor ? firstTextOffsetIn(index, el) : -1;
+    if (base < 0) return null;
+    return { anchor: anchor, start: from - base, end: to - base };
+  }
+
+  // The range a saved text position names, when its characters still read
+  // TEXT, whitespace aside. Null otherwise, and the caller searches for the
+  // quote as before: a changed page never binds a comment to other words.
+  function resolveTextPosition(position, text) {
+    try {
+      return rangeAtTextPosition(position, text);
+    } catch (ex) {
+      return null; // never fatal to a restore: the quote is then searched for, as before
+    }
+  }
+
+  function rangeAtTextPosition(position, text) {
+    if (!position || !text || !document.body) return null;
+    var start = position.start;
+    var end = position.end;
+    if (typeof start !== 'number' || typeof end !== 'number' || !(start >= 0) || !(end > start)) return null;
+    var el = resolveAnchorElement(position.anchor);
+    if (!el) return null;
+    var index = textIndex(document.body);
+    var base = firstTextOffsetIn(index, el);
+    if (base < 0 || base + end > index.text.length) return null;
+    if (squashedText(index.text.slice(base + start, base + end)) !== squashedText(text)) return null;
+    return rangeOver(index, base + start, base + end);
   }
 
   /**
@@ -2125,12 +2232,13 @@ ${SANDBOX_SHIM_SCRIPT}
    * Additional anchors restore anchor-only — a stale anchor simply doesn't
    * restore.
    */
-  function restoreAnnotation(id, annType, originalText, anchor, additionalAnchors) {
+  function restoreAnnotation(id, annType, originalText, anchor, additionalAnchors, textPosition) {
     removeAnnRecord(id); // a fresh restore is authoritative for its id
     var record = ensureAnnRecord(id, annType, {
       originalText: originalText || '',
       anchor: anchor || null,
-      additionalAnchors: additionalAnchors || null
+      additionalAnchors: additionalAnchors || null,
+      textPosition: textPosition || null
     });
     var found = false;
     var anchorEl = resolveAnchorElement(anchor);
@@ -2147,7 +2255,9 @@ ${SANDBOX_SHIM_SCRIPT}
       }
     }
     if (!found) {
-      var docRange = findTextRange(originalText, null);
+      // A text selection's saved place first: a quote the page holds more
+      // than once restores on its own occurrence, not the first.
+      var docRange = resolveTextPosition(textPosition, originalText) || findTextRange(originalText, null);
       if (docRange) {
         addRangeTarget(record, docRange, originalText, false);
         found = true;
@@ -2309,7 +2419,8 @@ ${SANDBOX_SHIM_SCRIPT}
           var scopeEl = record.params && record.params.anchor
             ? resolveAnchorElement(record.params.anchor)
             : null;
-          target.range = (scopeEl && findTextRange(target.text, scopeEl))
+          target.range = resolveTextPosition(record.params && record.params.textPosition, target.text)
+            || (scopeEl && findTextRange(target.text, scopeEl))
             || findTextRange(target.text, null);
           noteDeadSearchResult(target, !!target.range);
         }
@@ -4440,7 +4551,7 @@ ${SANDBOX_SHIM_SCRIPT}
         done = annotateElement(el, undefined, true, clickPoint) === true;
       }
       if (!done && typeof data.text === 'string' && data.text) {
-        var range = findTextRange(data.text, null);
+        var range = resolveTextPosition(data.textPosition, data.text) || findTextRange(data.text, null);
         if (range) {
           var sel = window.getSelection();
           sel.removeAllRanges();
