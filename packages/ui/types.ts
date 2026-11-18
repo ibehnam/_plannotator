@@ -105,6 +105,7 @@ export interface Annotation {
   htmlAnchor?: HtmlElementAnchor; // raw-HTML pinpoint: serialized element anchor for reliable restoration
   elementContext?: HtmlElementContext; // raw-HTML / live-app pinpoint: bounded agent-facing description of the primary element (never used by restore)
   htmlAdditionalTargets?: HtmlAnnotationTarget[]; // raw-HTML shift-click multi-select: extra elements this one comment covers (primary stays htmlAnchor/originalText)
+  htmlTextPosition?: HtmlTextPosition; // raw-HTML text selection: where it stands, so a repeated quote restores and exports on its own occurrence. Additive: without it, restore searches for the quote as before
   diagramAnchor?: DiagramAnchor; // a comment on a rendered diagram part (Mermaid / Graphviz fence): the part's own id, label and document source line; the highlighter skips it and the diagram overlay restores it (see @plannotator/core/diagram-anchor)
   imageRegion?: ImageRegion; // a comment on part of an image in a markdown document (#2100): the image's src as written, its document line, and the box in the image's own pixels; drawn by the image viewer, skipped by the highlighter, exported as `Image:` / `Region:` lines (see @plannotator/core/image-region)
   questionAnswer?: QuestionAnswer; // the reviewer's answer to a `:::question` block (id `ann-question-<key>`): the Viewer draws the answer from it, the highlighter skips it, and the export prints it in the "Answers to your questions" section instead of as a numbered comment (see @plannotator/core/question-block)
@@ -133,6 +134,19 @@ export interface HtmlElementAnchor {
    * target rect center.
    */
   point?: { x: number; y: number };
+}
+
+/**
+ * Where a raw-HTML text selection stands: the element it starts in, and
+ * half-open character offsets from that element's first character in the
+ * document's text, `end` possibly past the element. Mirrors
+ * `HtmlTextPosition` in `@plannotator/core/html-anchor`, whose
+ * `parseHtmlTextPosition` validates it at the parent trust boundary.
+ */
+export interface HtmlTextPosition {
+  anchor: HtmlElementAnchor;
+  start: number;
+  end: number;
 }
 
 /**

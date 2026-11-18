@@ -38,6 +38,19 @@ export interface HtmlAnnotationTarget {
   context?: HtmlElementContext;
 }
 
+/**
+ * Where a raw-HTML text selection stands, so a quote the page holds more than
+ * once restores on its own occurrence: the element the selection starts in,
+ * and half-open character offsets counted from that element's first
+ * character in the document's text (its text nodes in order), `end` possibly
+ * running on past the element into the text that follows.
+ */
+export interface HtmlTextPosition {
+  anchor: HtmlElementAnchor;
+  start: number;
+  end: number;
+}
+
 export interface HtmlElementContext {
   tag: string;
   id?: string;
@@ -176,6 +189,24 @@ export function parseHtmlElementAnchor(value: unknown): HtmlElementAnchor | null
   if (text === undefined) return { selector, tagName, ...(point ? { point } : {}) };
   if (typeof text !== "string" || text.length > MAX_HTML_ANCHOR_TEXT_LENGTH) return null;
   return { selector, tagName, text, ...(point ? { point } : {}) };
+}
+
+/** The largest character offset a text position may name. */
+export const MAX_HTML_TEXT_POSITION_OFFSET = 100_000_000;
+
+/**
+ * Validate a text position: its anchor as `parseHtmlElementAnchor` takes one,
+ * and integer offsets with `0 <= start < end <= MAX_HTML_TEXT_POSITION_OFFSET`.
+ * `null` fails closed: the selection keeps its quote and restores by search.
+ */
+export function parseHtmlTextPosition(value: unknown): HtmlTextPosition | null {
+  if (!isRecord(value)) return null;
+  const anchor = parseHtmlElementAnchor(value.anchor);
+  const { start, end } = value;
+  if (!anchor || typeof start !== "number" || typeof end !== "number") return null;
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return null;
+  if (start < 0 || end <= start || end > MAX_HTML_TEXT_POSITION_OFFSET) return null;
+  return { anchor, start, end };
 }
 
 /** Collapse control characters and whitespace runs, then cap. */

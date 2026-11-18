@@ -202,7 +202,7 @@ function extractFunction(name: string): string {
 }
 
 /** The shipped restoreDraft with fakes for what it calls. */
-function bridgeRestore(world: { element: unknown; range: unknown; annotate: boolean; select: boolean }) {
+function bridgeRestore(world: { element: unknown; range: unknown; annotate: boolean; select: boolean; placed?: unknown }) {
   const calls: Array<{ fn: string; args: unknown[]; restoreId: unknown }> = [];
   const posted: Array<Record<string, unknown>> = [];
   const make = new Function(
@@ -214,6 +214,7 @@ function bridgeRestore(world: { element: unknown; range: unknown; annotate: bool
      var window = { getSelection: function () { return { removeAllRanges: function () {}, addRange: function (r) { calls.push({ fn: 'addRange', args: [r], restoreId: restoreDraftId }); } }; } };
      function resolveAnchorElement(a) { calls.push({ fn: 'resolve', args: [a], restoreId: restoreDraftId }); return world.element; }
      function annotateElement(el, mode, via, point) { calls.push({ fn: 'annotate', args: [el, via, point], restoreId: restoreDraftId }); return world.annotate; }
+     function resolveTextPosition(position, text) { calls.push({ fn: 'position', args: [position, text], restoreId: restoreDraftId }); return world.placed || null; }
      function findTextRange(text) { calls.push({ fn: 'find', args: [text], restoreId: restoreDraftId }); return world.range; }
      function handleSelection() { calls.push({ fn: 'select', args: [], restoreId: restoreDraftId }); return world.select; }
      function postToParent(m) { posted.push(m); }
@@ -242,8 +243,21 @@ describe('the bridge answering restore-draft', () => {
     const range = { fake: true };
     const { api, calls, posted } = bridgeRestore({ element: null, range, annotate: false, select: true });
     api.restoreDraft({ id: 'r2', anchor, text: 'Pinpoint target' });
-    expect(calls.map((c) => c.fn)).toEqual(['resolve', 'find', 'addRange', 'select']);
+    expect(calls.map((c) => c.fn)).toEqual(['resolve', 'position', 'find', 'addRange', 'select']);
     expect(calls.find((c) => c.fn === 'select')!.restoreId).toBe('r2');
+    expect(posted).toEqual([]);
+  });
+
+  // Failure to catch: a quote the page holds more than once coming back on its first occurrence, when the draft
+  // knows the selection's own place.
+  test("a draft's own text position is selected before any search for its words", () => {
+    const placed = { at: 'its own occurrence' };
+    const textPosition = { anchor, start: 12, end: 16 };
+    const { api, calls, posted } = bridgeRestore({ element: null, range: { fake: true }, annotate: false, select: true, placed });
+    api.restoreDraft({ id: 'r4', anchor, text: 'both', textPosition });
+    expect(calls.map((c) => c.fn)).toEqual(['resolve', 'position', 'addRange', 'select']);
+    expect(calls.find((c) => c.fn === 'position')!.args).toEqual([textPosition, 'both']);
+    expect(calls.find((c) => c.fn === 'addRange')!.args).toEqual([placed]);
     expect(posted).toEqual([]);
   });
 
