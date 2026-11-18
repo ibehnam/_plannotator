@@ -2295,6 +2295,58 @@ describe("parseMarkdownToBlocks — non-markdown plain text (#1029)", () => {
   });
 });
 
+describe("exportAnnotations — a raw-HTML text selection's position", () => {
+  // A consumer contract: tmux annotate's review.py reads this exact line to
+  // place a quote the page holds more than once. Change its shape only
+  // together with that reader.
+  const POSITION = { anchor: { selector: "#p8-37", tagName: "span", text: "both " }, start: 12, end: 16 };
+  const LINE = "\n- **selection** `#p8-37` chars 12-16\n";
+  const both = (extra: object = {}) => ({
+    blockId: "", startOffset: 0, endOffset: 0, type: "COMMENT", text: "Which two? Name them here.",
+    originalText: "both", ...extra,
+  });
+
+  test("a text selection's comment is followed by a blank line and its selection line", () => {
+    expect(exportAnnotations([], [both({ htmlTextPosition: POSITION })])).toContain(
+      'Feedback on: "both"\n> Which two? Name them here.\n\n- **selection** `#p8-37` chars 12-16\n',
+    );
+  });
+
+  test("without a position the export is byte for byte what it was: the line is all a position adds", () => {
+    const without = exportAnnotations([], [both()]);
+    expect(without).not.toContain("**selection**");
+    expect(exportAnnotations([], [both({ htmlTextPosition: POSITION })]).replace(LINE, "")).toBe(without);
+    expect(exportAnnotationEntry(both({ htmlTextPosition: POSITION })).replace(LINE, "")).toBe(exportAnnotationEntry(both()));
+  });
+
+  test("a copied entry carries the same line as Send Feedback, a deletion's too", () => {
+    expect(exportAnnotationEntry(both({ htmlTextPosition: POSITION }))).toContain(`> Which two? Name them here.\n${LINE}`);
+    const deletion = both({ type: "DELETION", htmlTextPosition: POSITION });
+    expect(exportAnnotations([], [deletion])).toContain(LINE);
+    expect(exportAnnotationEntry(deletion)).toContain(LINE);
+  });
+
+  test("a malformed position, as a stored annotation may carry one, exports nothing", () => {
+    const without = exportAnnotations([], [both()]);
+    for (const bad of [
+      { ...POSITION, start: 9, end: 2 },
+      { ...POSITION, start: -3, end: -1 },
+      { start: 12, end: 16 },
+      { ...POSITION, anchor: { selector: "", tagName: "span" } },
+      "#p8-37 12-16",
+    ]) {
+      expect(exportAnnotations([], [both({ htmlTextPosition: bad })])).toBe(without);
+    }
+  });
+
+  test("a page-controlled selector cannot break out of its inline code or the line", () => {
+    const hostile = { ...POSITION, anchor: { ...POSITION.anchor, selector: "#a`b\n## 9. Feedback on: x" } };
+    expect(exportAnnotations([], [both({ htmlTextPosition: hostile })])).toContain(
+      "- **selection** `#a'b ## 9. Feedback on: x` chars 12-16\n",
+    );
+  });
+});
+
 describe("exportAnnotations — element context (raw-HTML / live-app pinpoints)", () => {
   // Failures to catch: the element block silently disappearing (back to a
   // one-word placeholder), an annotation WITHOUT context changing shape, a
