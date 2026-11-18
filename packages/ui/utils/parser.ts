@@ -4,6 +4,7 @@ import { planDenyFeedback } from '@plannotator/core/feedback-templates';
 import { resolveReplyParents } from '@plannotator/core/annotation-threads';
 import { diagramAnchorLocationLine, parseDiagramAnchor } from '@plannotator/core/diagram-anchor';
 import { imageRegionLocationLines, parseImageRegion, type ImageRegion } from '@plannotator/core/image-region';
+import { parseHtmlTextPosition } from '@plannotator/core/html-anchor';
 import {
   formatQuestionAnswerLines,
   formatQuestionAnswerText,
@@ -941,6 +942,20 @@ export const elementContextExportBlock = (ann: any, opts: ElementContextExportOp
   return block;
 };
 
+/** A raw-HTML text selection's own place, after its comment: a blank line,
+ *  then `- **selection** \`#p8-37\` chars 12-16`, the element the selection
+ *  starts in and its half-open character offsets from that element's first
+ *  character. Its own key: `- **selector**` names a comment's target element.
+ *  A consumer reads it to place a quote the page holds more than once (a
+ *  contract, parser.test.ts). Emits nothing for an annotation without a
+ *  position, keeping its output byte-identical. */
+export const textPositionExportBlock = (ann: any): string => {
+  // Stored annotations are not revalidated on the way in (drafts, host stores), so the trust boundary's validator runs here too.
+  const position = ann?.htmlTextPosition == null ? null : parseHtmlTextPosition(ann.htmlTextPosition);
+  if (!position) return '';
+  return `\n- **selection** \`${safeInline(position.anchor.selector, 300)}\` chars ${position.start}-${position.end}\n`;
+};
+
 /** Multi-target raw-HTML comments: list every ADDITIONAL element the one
  *  comment covers (the primary target is already quoted as `originalText`),
  *  labeled with the semantic hover label plus a short excerpt so the agent
@@ -1080,6 +1095,7 @@ export const exportAnnotationEntry = (ann: any, opts: ElementContextExportOption
     ...(opts.includeOutline !== undefined ? { includeOutline: opts.includeOutline } : {}),
   };
   output += elementContextExportBlock(ann, resolvedOpts);
+  output += textPositionExportBlock(ann);
   output += additionalTargetsExportBlock(ann);
   if (Array.isArray(ann?.images)) output += attachedLines(ann.images);
   return output;
@@ -1441,6 +1457,8 @@ const renderAnnotationEntries = (
     // Raw-HTML / live-app pinpoints describe their element for the agent
     // (the grouped export's `## Page:` heading already carries the route).
     output += elementContextExportBlock(ann, { includeRoute: false });
+    // A raw-HTML text selection says where it stands.
+    output += textPositionExportBlock(ann);
     // Multi-target raw-HTML comments list every additional covered element.
     output += additionalTargetsExportBlock(ann);
 
