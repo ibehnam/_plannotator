@@ -10,13 +10,6 @@ import type { QuickLabel } from './quickLabels';
 /** The modes in the toolstrip's order, left to right: Shift+1 to Shift+4 pick them, on every surface. */
 export const ANNOTATION_MODE_ORDER: readonly EditorMode[] = ['selection', 'comment', 'redline', 'quickLabel'];
 
-/** The mode a Shift+digit picks (1 to 4), or null for any other digit. */
-export function annotationModeForDigit(digit: number): EditorMode | null {
-  return Number.isInteger(digit) && digit >= 1 && digit <= ANNOTATION_MODE_ORDER.length
-    ? ANNOTATION_MODE_ORDER[digit - 1]!
-    : null;
-}
-
 /** What a new selection opens: the markup toolbar, the comment composer, an immediate deletion, the label picker. */
 export type SelectionAction = 'toolbar' | 'composer' | 'delete' | 'labelPicker';
 

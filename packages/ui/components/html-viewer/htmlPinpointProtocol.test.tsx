@@ -384,40 +384,6 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     await typeComment(''); // leave no draft for the next test
   });
 
-  test('an Escape pressed inside the page closes the open composer: the bridge is told an overlay is open, and its overlay-escape closes it with its words kept', async () => {
-    const { postSelection, postedToIframe } = await mountViewer({ mode: 'selection', onAdd: () => {} });
-    await postSelection({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
-    const overlayOpen = () =>
-      postedToIframe.filter((m) => m.type === 'plannotator-bridge-set-host-overlay').map((m) => m.open).at(-1);
-    expect(overlayOpen()).toBe(false);
-    await postSelection({ ...selectionMessage, pinpoint: true });
-    // The page is asked to give up focus as the composer opens, not only the frame element blurred.
-    expect(postedToIframe.some((m) => m.type === 'plannotator-bridge-release-focus')).toBe(true);
-    expect(overlayOpen()).toBe(true);
-    await typeComment('Words to keep');
-    const cancelsBefore = postedToIframe.filter((m) => m.type === 'plannotator-bridge-cancel-selection').length;
-    await postSelection({ type: 'plannotator-bridge-overlay-escape' });
-    expect(document.querySelector('[data-comment-popover]')).toBeNull();
-    expect(postedToIframe.filter((m) => m.type === 'plannotator-bridge-cancel-selection').length).toBe(cancelsBefore + 1);
-    expect(overlayOpen()).toBe(false);
-    // The words are kept: pinning the same element again restores them.
-    await postSelection({ ...selectionMessage, pinpoint: true });
-    expect(document.querySelector<HTMLTextAreaElement>('[data-comment-popover] textarea')?.value).toBe('Words to keep');
-    await typeComment(''); // leave no draft for the next test
-  });
-
-  test('overlay-escape closes the markup toolbar too, and with nothing open it does nothing', async () => {
-    const { postSelection, postedToIframe } = await mountViewer({ mode: 'selection', onAdd: () => {} });
-    await postSelection({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
-    await postSelection(selectionMessage);
-    expect(document.querySelector('.annotation-toolbar')).not.toBeNull();
-    await postSelection({ type: 'plannotator-bridge-overlay-escape' });
-    expect(document.querySelector('.annotation-toolbar')).toBeNull();
-    const before = postedToIframe.length;
-    await postSelection({ type: 'plannotator-bridge-overlay-escape' });
-    expect(postedToIframe.slice(before).filter((m) => m.type === 'plannotator-bridge-cancel-selection')).toHaveLength(0);
-  });
-
   test("Escape with focus on this document's body closes a visible composer, its words kept, as after a click back into the page", async () => {
     const { postSelection } = await mountViewer({ mode: 'selection', onAdd: () => {} });
     await postSelection({ ...selectionMessage, pinpoint: true });
@@ -1765,7 +1731,6 @@ describe.if(hasDom)('Interact/Annotate mode on static (srcdoc) surfaces', () => 
     onStep?: (dir: 1 | -1) => void;
     stepInInteract?: boolean;
     onPageEscape?: () => void;
-    onModeKey?: (digit: number) => void;
   } = {}) {
     if (!htmlViewerModule) throw new Error('DOM test environment is not registered');
     const HtmlViewer = htmlViewerModule.HtmlViewer;
@@ -1789,7 +1754,6 @@ describe.if(hasDom)('Interact/Annotate mode on static (srcdoc) surfaces', () => 
           onStep={options.onStep}
           stepInInteract={options.stepInInteract}
           onPageEscape={options.onPageEscape}
-          onModeKey={options.onModeKey}
         />,
       );
     });
@@ -1941,26 +1905,6 @@ describe.if(hasDom)('Interact/Annotate mode on static (srcdoc) surfaces', () => 
     expect(armed).toEqual([]);
   });
 
-  test("Shift+1 to 4 inside the page pick the host's mode: the bridge is asked for the keys when the host takes them, and a key counts only for 1 to 4 with the frame focused", async () => {
-    const digits: number[] = [];
-    const { post, postedToIframe } = await mountModeViewer({ onModeKey: (digit) => digits.push(digit) });
-    await post({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
-    expect(postedToIframe.filter((m) => m.type === 'plannotator-bridge-set-mode-keys').map((m) => m.active)).toEqual([true]);
-    const iframe = document.querySelector<HTMLIFrameElement>('iframe')!;
-    await post({ type: 'plannotator-bridge-mode-key', digit: 3 });
-    expect(digits).toEqual([]);
-    await act(async () => { iframe.focus(); });
-    await post({ type: 'plannotator-bridge-mode-key', digit: 3 });
-    await post({ type: 'plannotator-bridge-mode-key', digit: 9 });
-    await post({ type: 'plannotator-bridge-mode-key', digit: '2' });
-    expect(digits).toEqual([3]);
-  });
-
-  test('a host that does not take the mode keys leaves them to the page', async () => {
-    const { post, postedToIframe } = await mountModeViewer();
-    await post({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
-    expect(postedToIframe.filter((m) => m.type === 'plannotator-bridge-set-mode-keys').map((m) => m.active)).toEqual([false]);
-  });
 });
 
 describe.if(hasDom)('parseHtmlElementContext (validated DTO)', () => {
@@ -2071,6 +2015,13 @@ describe.if(hasDom)('keys pressed in the page', () => {
     });
     const iframe = host.querySelector<HTMLIFrameElement>('iframe');
     if (!iframe?.contentWindow) throw new Error('HTML iframe missing');
+    const postedToIframe: Array<Record<string, unknown>> = [];
+    const realPost = iframe.contentWindow.postMessage.bind(iframe.contentWindow);
+    (iframe.contentWindow as unknown as { postMessage: (data: unknown) => void }).postMessage =
+      ((data: unknown, ...rest: unknown[]) => {
+        if (data && typeof data === 'object') postedToIframe.push(data as Record<string, unknown>);
+        return (realPost as (...args: unknown[]) => unknown)(data, ...rest);
+      }) as typeof iframe.contentWindow.postMessage;
     const port = await bridgeLinkPort(iframe);
     const asked: Array<Record<string, unknown>> = [];
     port.onmessage = (event) => asked.push(event.data as Record<string, unknown>);
@@ -2107,7 +2058,24 @@ describe.if(hasDom)('keys pressed in the page', () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
     };
-    return { iframe, asked, ran, key, onPort, onWindow, settle };
+    return { iframe, asked, ran, key, onPort, onWindow, settle, postedToIframe };
+  }
+
+  const pin = {
+    type: 'plannotator-bridge-selection', text: 'Page text', pinpoint: true,
+    rect: { top: 10, left: 10, width: 120, height: 24 },
+    anchor: { selector: 'p:nth-of-type(1)', tagName: 'p', text: 'Page text' },
+  };
+  const composerOpen = () => document.querySelector('[data-comment-popover]') !== null;
+  async function typeComment(value: string) {
+    const el = document.querySelector<HTMLTextAreaElement>('[data-comment-popover] textarea');
+    if (!el) throw new Error('composer textarea missing');
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
+    await act(async () => {
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
   }
 
   const removeListeners: Array<() => void> = [];
@@ -2149,6 +2117,39 @@ describe.if(hasDom)('keys pressed in the page', () => {
     await onPort(key('keypress', { key: 'Enter' }));
     await onPort(key('keydown', { key: 'Enter', metaKey: 'yes' }));
     expect(ran).toEqual([]);
+  });
+
+  test('an Escape pressed inside the page closes the open composer, its words kept, and cancels the selection', async () => {
+    const { iframe, key, onPort, onWindow, settle, postedToIframe } = await mountKeys({ forwardPageKeys: CLAIMS });
+    await onWindow(pin);
+    // The page is asked to give up focus as the composer opens, not only the frame element blurred.
+    expect(postedToIframe.some((m) => m.type === 'plannotator-bridge-release-focus')).toBe(true);
+    await typeComment('Words to keep');
+    const cancelsBefore = postedToIframe.filter((m) => m.type === 'plannotator-bridge-cancel-selection').length;
+    // A click back into the page once the composer took focus, then Escape
+    // there: the guard claims it (the host asked for Escape).
+    await settle();
+    iframe.focus();
+    await onPort(key('keydown', { key: 'Escape', code: 'Escape' }));
+    expect(composerOpen()).toBe(false);
+    expect(postedToIframe.filter((m) => m.type === 'plannotator-bridge-cancel-selection').length).toBe(cancelsBefore + 1);
+    // The words are kept: pinning the same element again restores them.
+    await onWindow(pin);
+    expect(document.querySelector<HTMLTextAreaElement>('[data-comment-popover] textarea')?.value).toBe('Words to keep');
+    await typeComment(''); // leave no draft for the next test
+  });
+
+  test('an Escape pressed inside the page closes the markup toolbar too, and with nothing open it closes nothing', async () => {
+    const { iframe, key, onPort, onWindow, postedToIframe } = await mountKeys({ forwardPageKeys: CLAIMS });
+    await onWindow({ ...pin, pinpoint: undefined });
+    expect(document.querySelector('.annotation-toolbar') !== null).toBe(true);
+    iframe.focus();
+    await onPort(key('keydown', { key: 'Escape', code: 'Escape' }));
+    expect(document.querySelector('.annotation-toolbar') !== null).toBe(false);
+    const before = postedToIframe.length;
+    iframe.focus();
+    await onPort(key('keydown', { key: 'Escape', code: 'Escape' }));
+    expect(postedToIframe.slice(before).filter((m) => m.type === 'plannotator-bridge-cancel-selection')).toHaveLength(0);
   });
 
   test('a host that does not ask (the Inbox) gets no keys and runs none', async () => {

@@ -297,7 +297,11 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     );
   }
 
-  test("an Escape with a host overlay open closes it from inside the page, ahead of the page's handlers and the ladder, in Interact and armed", async () => {
+  // The host's keys are the link guard's to hand over (linkGuard.ts): the
+  // bridge itself takes no Escape for an overlay the host has open, and no
+  // Shift+1 to 4, so the guard sees them unused and sends them on its port.
+  // Retired messages from an older host change nothing.
+  test("the bridge takes no Escape for the host's overlay: the page's handlers and the ladder have it, in Interact and armed", async () => {
     document.body.innerHTML = "<p>Page text</p>";
     const posted: string[] = [];
     const record = (event: MessageEvent) => {
@@ -317,56 +321,40 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
       return key;
     };
     try {
+      postBridge({ type: "plannotator-bridge-set-host-overlay", open: true });
       for (const active of [false, true]) {
         postBridge({ type: "plannotator-bridge-set-annotate-mode", active });
-        postBridge({ type: "plannotator-bridge-set-host-overlay", open: true });
         posted.length = 0;
-        const key = await escape();
-        expect(key.defaultPrevented).toBe(true);
-        expect(posted).toEqual(["plannotator-bridge-overlay-escape"]);
+        expect((await escape()).defaultPrevented).toBe(false);
+        // Upstream's ladder: armed, Escape exits Annotate; in Interact, the
+        // unused Escape is offered as page-escape.
+        expect(posted).toEqual([active ? "plannotator-bridge-annotate-exit" : "plannotator-bridge-page-escape"]);
       }
-      expect(pageSaw).toBe(0);
-      // No overlay open: the ladder is back (armed, Escape exits Annotate).
-      postBridge({ type: "plannotator-bridge-set-host-overlay", open: false });
-      posted.length = 0;
-      await escape();
-      expect(posted).toEqual(["plannotator-bridge-annotate-exit"]);
-      expect(pageSaw).toBe(1);
+      expect(pageSaw).toBe(2);
     } finally {
       window.removeEventListener("message", record);
       document.removeEventListener("keydown", pageHandler);
-      postBridge({ type: "plannotator-bridge-set-host-overlay", open: false });
       postBridge({ type: "plannotator-bridge-set-annotate-mode", active: true });
     }
   });
 
-  test("Shift+1 to 4 pressed in the page go to the host as mode-key once it asks for them, never from a text field or over a pending selection", async () => {
-    document.body.innerHTML = '<p>Page text</p><input id="mode-field">';
-    const digits: number[] = [];
+  test("Shift+1 to 4 pressed in the page are left unused by the bridge, and no mode-key is posted", async () => {
+    document.body.innerHTML = "<p>Page text</p>";
+    const posted: unknown[] = [];
     const record = (event: MessageEvent) => {
       const data = bridgeMessageData(event);
-      if (data && data.type === "plannotator-bridge-mode-key") digits.push(data.digit as number);
+      if (data && data.type === "plannotator-bridge-mode-key") posted.push(data.digit);
     };
     window.addEventListener("message", record);
-    const press = async (target: Element, code: string, extra: KeyboardEventInit = {}) => {
-      const key = new KeyboardEvent("keydown", { code, key: "#", shiftKey: true, bubbles: true, cancelable: true, ...extra });
-      target.dispatchEvent(key);
-      await new Promise<void>((resolve) => setTimeout(resolve, 20));
-      return key;
-    };
     try {
-      const page = document.querySelector("p")!;
-      expect((await press(page, "Digit3")).defaultPrevented).toBe(false);
-      expect(digits).toEqual([]);
       postBridge({ type: "plannotator-bridge-set-mode-keys", active: true });
-      expect((await press(page, "Digit3")).defaultPrevented).toBe(true);
-      await press(page, "Digit5");
-      await press(page, "Digit2", { metaKey: true });
-      await press(document.getElementById("mode-field")!, "Digit1");
-      expect(digits).toEqual([3]);
+      const key = new KeyboardEvent("keydown", { code: "Digit3", key: "#", shiftKey: true, bubbles: true, cancelable: true });
+      document.querySelector("p")!.dispatchEvent(key);
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      expect(key.defaultPrevented).toBe(false);
+      expect(posted).toEqual([]);
     } finally {
       window.removeEventListener("message", record);
-      postBridge({ type: "plannotator-bridge-set-mode-keys", active: false });
     }
   });
 
