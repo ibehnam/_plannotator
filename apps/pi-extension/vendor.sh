@@ -94,9 +94,11 @@ rm -rf generated/call-flow-runtime/packs
 cp -R ../../packages/shared/call-flow-runtime/packs generated/call-flow-runtime/packs
 
 # Vendor review agent modules from packages/server/ — rewrite imports for generated/ layout
-for f in agent-review-message codex-review claude-review review-findings marker-review path-utils review-skill-loader; do
+for f in agent-review-message codex-review claude-review review-findings marker-review path-utils review-skill-loader close-tab; do
   src="../../packages/server/$f.ts"
   printf '// @generated — DO NOT EDIT. Source: packages/server/%s.ts\n' "$f" | cat - "$src" \
+    | sed 's|from "@plannotator/shared/request-origin"|from "./request-origin.ts"|' \
+    | sed 's|from "./remote"|from "../server/network.ts"|' \
     | sed 's|from "./vcs"|from "./review-core.ts"|' \
     | sed 's|from "./pr"|from "./pr-provider.ts"|' \
     | sed 's|from "./path-utils"|from "./path-utils.ts"|' \

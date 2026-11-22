@@ -20,6 +20,7 @@ import { localImageContentType, localImageResponseHeaders } from "../generated/l
 import { starAskRoute, starAskService, type StarAskSurface } from "../generated/star-ask.ts";
 import { piPingVersion } from "./daily-ping.ts";
 import { json, parseBody, send, toWebRequest } from "./helpers.ts";
+import { handleCloseTabRequest } from "../generated/close-tab.ts";
 import { isSameOriginRequest } from "./request-origin-guard.ts";
 import {
 	type BearConfig,
@@ -34,6 +35,20 @@ import {
 } from "./integrations.ts";
 
 type Res = import("node:http").ServerResponse;
+
+/**
+ * POST /api/close-tab: the done screen's request for a tab that cannot close itself, by the Bun
+ * servers' own handler (packages/server/close-tab.ts, vendored). It gets this request as a Fetch
+ * request and the address the page used, so its same-origin check and the session's port read as
+ * they do there. A session stopped before a held close answers drops the answer; the close itself
+ * still runs in Pi's process.
+ */
+export async function handleCloseTabRoute(req: IncomingMessage, res: Res): Promise<void> {
+	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+	const answer = await handleCloseTabRequest(toWebRequest(req), url);
+	if (res.writableEnded || res.destroyed) return;
+	json(res, await answer.json(), answer.status);
+}
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set([
 	"png",

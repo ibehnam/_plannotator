@@ -193,6 +193,8 @@ import {
 } from "@plannotator/shared/prompts";
 import { buildReviewOutput, supportsReviewApprovalNotes } from "./review-output";
 import { registerSession, unregisterSession, listSessions, listInProcessSessions, type SessionInfo } from "@plannotator/server/sessions";
+// Between a decision and the server's stop: the done screen's requests, and a tab close it asked for (close-tab.ts).
+import { settleSession } from "@plannotator/server/close-tab";
 import { enableAutoUpdateNotice, isManagedBinary, scheduleAutoUpdateCheck } from "@plannotator/server/auto-update";
 import { openBrowser, openBrowserDetached } from "@plannotator/server/browser";
 import { inlineHtmlLocalAssets } from "@plannotator/server/html-assets";
@@ -1439,7 +1441,7 @@ if (args[0] === "sessions") {
   });
 
   const result = await server.waitForDecision();
-  await Bun.sleep(800);
+  await settleSession(800);
   server.stop();
 
   if (result.exit) {
@@ -1898,7 +1900,7 @@ if (args[0] === "sessions") {
   const result = await server.waitForDecision();
 
   // Give browser time to receive response and update UI
-  await Bun.sleep(1500);
+  await settleSession(1500);
 
   // Cleanup
   server.stop();
@@ -2218,7 +2220,7 @@ if (args[0] === "sessions") {
 
   await completeAnnotateCommand({
     waitForDecision: server.waitForDecision,
-    settleAfterDecision: () => Bun.sleep(1500),
+    settleAfterDecision: () => settleSession(1500),
     stopServer: server.stop,
     requireApproval: requireApprovalFlag,
     resultFile,
@@ -2530,7 +2532,7 @@ if (args[0] === "sessions") {
 
   const result = await server.waitForDecision();
 
-  await Bun.sleep(1500);
+  await settleSession(1500);
 
   server.stop();
 
@@ -2582,7 +2584,7 @@ if (args[0] === "sessions") {
 
   await server.waitForDone!();
 
-  await Bun.sleep(500);
+  await settleSession(500);
   server.stop();
   process.exit(0);
 
@@ -2964,7 +2966,7 @@ if (args[0] === "sessions") {
   });
 
   const result = await server.waitForDecision();
-  await Bun.sleep(1500);
+  await settleSession(1500);
   server.stop();
 
   console.log(JSON.stringify({
@@ -3073,7 +3075,7 @@ if (args[0] === "sessions") {
   });
 
   const result = await server.waitForDecision();
-  await Bun.sleep(1500);
+  await settleSession(1500);
   server.stop();
 
   emitOpenCodeAnnotateOutcome(result);
@@ -3141,7 +3143,7 @@ if (args[0] === "sessions") {
   });
 
   const result = await server.waitForDecision();
-  await Bun.sleep(1500);
+  await settleSession(1500);
   server.stop();
 
   // Output Copilot CLI permission decision format
@@ -3246,7 +3248,7 @@ if (args[0] === "sessions") {
   });
 
   const result = await server.waitForDecision();
-  await Bun.sleep(1500);
+  await settleSession(1500);
   server.stop();
 
   emitAnnotateOutcome(result, { runtime: "copilot-cli" });
@@ -3356,7 +3358,7 @@ if (args[0] === "sessions") {
 
   const result = await server.waitForDecision();
   if (revisionTimer) clearInterval(revisionTimer);
-  await Bun.sleep(1500);
+  await settleSession(1500);
   server.stop();
 
   // updatePlan refuses once a decision is claimed, so `currentPlan` is the
@@ -3471,7 +3473,7 @@ if (args[0] === "sessions") {
     });
 
     const result = await server.waitForDecision();
-    await Bun.sleep(1500);
+    await settleSession(1500);
     server.stop();
 
     if (result.approved) {
@@ -3541,7 +3543,7 @@ if (args[0] === "sessions") {
     });
 
     const vibeResult = await vibeServer.waitForDecision();
-    await Bun.sleep(1500);
+    await settleSession(1500);
     vibeServer.stop();
 
     if (vibeResult.approved) {
@@ -3665,7 +3667,7 @@ if (args[0] === "sessions") {
   const result = await server.waitForDecision();
 
   // Give browser time to receive response and update UI
-  await Bun.sleep(1500);
+  await settleSession(1500);
 
   // Cleanup
   server.stop();

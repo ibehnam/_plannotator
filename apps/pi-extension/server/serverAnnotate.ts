@@ -66,6 +66,7 @@ import {
 	readDraftGenerationFromUrl,
 	handleSaveNotesRequest,
 	handleUploadRequest,
+	handleCloseTabRoute,
 } from "./handlers.ts";
 import { handleApiNotFound, serveApp, json, parseBody, requestUrl } from "./helpers.ts";
 import { createPiAIRuntime, handlePiAIRequest } from "./ai-runtime.ts";
@@ -1518,6 +1519,9 @@ export async function startAnnotateServer(options: {
 				const message = err instanceof Error ? err.message : "Failed to process feedback";
 				json(res, { error: message }, 500);
 			}
+		} else if (url.pathname === "/api/close-tab" && req.method === "POST") {
+			// The done screen's tab, closed from here when the page's own close is refused (close-tab.ts).
+			await handleCloseTabRoute(req, res);
 		} else if (url.pathname === "/api/save-notes" && req.method === "POST") {
 			await handleSaveNotesRequest(req, res, { serverSession, notion: notionAvailable });
 		} else if (url.pathname.startsWith("/api/")) {

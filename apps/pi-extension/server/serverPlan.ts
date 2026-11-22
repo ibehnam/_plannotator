@@ -42,6 +42,7 @@ import {
 	sendMissingDraft,
 	handleSaveNotesRequest,
 	handleUploadRequest,
+	handleCloseTabRoute,
 } from "./handlers.ts";
 import { handleApiNotFound, serveApp, json, parseBody, requestUrl } from "./helpers.ts";
 import { createPiAIRuntime, handlePiAIRequest } from "./ai-runtime.ts";
@@ -376,7 +377,10 @@ export async function startPlanReviewServer(options: {
 		if (await handleRefCards(req, res, url, refCards, serverSession)) return;
 		if (refuseReferenceRead(req, res, url, getAllowedRootPaths)) return;
 
-		if (url.pathname === "/api/done" && req.method === "POST") {
+		// The done screen's tab, closed from here when the page's own close is refused (close-tab.ts).
+		if (url.pathname === "/api/close-tab" && req.method === "POST") {
+			await handleCloseTabRoute(req, res);
+		} else if (url.pathname === "/api/done" && req.method === "POST") {
 			resolveDone?.();
 			json(res, { ok: true });
 		} else if (

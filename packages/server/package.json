@@ -39,6 +39,7 @@
     "./html-assets": "./html-assets.ts",
     "./guide-cli": "./guide/guide-cli.ts",
     "./live-proxy": "./live-proxy.ts",
+    "./close-tab": "./close-tab.ts",
     "./inbox": "./inbox.ts",
     "./shape": "./shape.ts",
     "./inbox-project-root": "./inbox-project-root.ts",

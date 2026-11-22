@@ -3,6 +3,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { completeAnnotateCommand } from "./annotate-command";
+import { handleCloseTabRequest, settleSession, type CloseTabOutcome } from "@plannotator/server/close-tab";
 import type { AnnotateOutcome } from "./strict-annotate-result";
 
 interface RunResult {
@@ -300,5 +301,51 @@ describe("completeAnnotateCommand", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  // The done screen asks the server to close a tab that cannot close itself
+  // (POST /api/close-tab, held for the page's countdown): the session settles
+  // for that close before it stops, and for a hung one only up to its bound.
+  async function completeWithClose(close: () => Promise<CloseTabOutcome>, graceMs?: number): Promise<string[]> {
+    const events: string[] = [];
+    const started = Date.now();
+    const url = new URL("http://localhost:51747/api/close-tab");
+    void handleCloseTabRequest(
+      new Request(url, { method: "POST", body: JSON.stringify({ afterMs: 100 }) }),
+      url,
+      async () => {
+        const outcome = await close();
+        events.push(`tab closed${Date.now() - started >= 90 ? " after its countdown" : " early"}`);
+        return outcome;
+      },
+      { graceMs },
+    ).then(() => events.push("answered"));
+    await completeAnnotateCommand({
+      waitForDecision: async () => {
+        events.push("decision");
+        return { approved: true, feedback: "" };
+      },
+      settleAfterDecision: () => settleSession(10),
+      stopServer: () => events.push("stop"),
+      requireApproval: false,
+      emitLegacyOutcome: () => events.push("legacy"),
+      exit: (code) => events.push(`exit:${code}`),
+    });
+    return events;
+  }
+
+  test("the session stays up for the tab it was asked to close: the close is answered before the server stops", async () => {
+    const events = await completeWithClose(async () => ({ closed: 1, browsers: ["com.brave.Browser"] }));
+    expect(events).toEqual(["decision", "tab closed after its countdown", "answered", "stop", "legacy", "exit:0"]);
+  });
+
+  test("a close that never ends holds the session only up to its bound", async () => {
+    const started = Date.now();
+    const events = await completeWithClose(() => new Promise<CloseTabOutcome>(() => {}), 150);
+    const waited = Date.now() - started;
+    expect(events).toEqual(["decision", "stop", "legacy", "exit:0"]);
+    // Its countdown (100 ms) and its bound (150 ms), not more.
+    expect(waited).toBeGreaterThanOrEqual(240);
+    expect(waited).toBeLessThan(1_500);
   });
 });

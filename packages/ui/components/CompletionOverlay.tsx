@@ -50,7 +50,7 @@ interface CompletionOverlayProps {
    * (the local server closing the tab through the browser). Omitted: the done
    * screen says it could not close the tab, as before.
    */
-  hostClose?: () => Promise<HostCloseResult>;
+  hostClose?: (afterMs: number) => Promise<HostCloseResult>;
 }
 
 export function CompletionOverlay({ submitted, title, subtitle, agentLabel, links, footer, hostClose }: CompletionOverlayProps) {

@@ -170,6 +170,7 @@ import {
 	readDraftGenerationFromBody,
 	readDraftGenerationFromUrl,
 	handleUploadRequest,
+	handleCloseTabRoute,
 } from "./handlers.ts";
 import { handleApiNotFound, serveApp, json, parseBody, parseJsonBody, readBody, requestUrl, send } from "./helpers.ts";
 import { createReviewLiveRoute } from "./review-live-route.ts";
@@ -4189,6 +4190,9 @@ export async function startReviewServer(options: {
 			if (await handlePiAIRequest(req, res, url, aiRuntime)) return;
 			handleApiNotFound(res, url.pathname);
 			return;
+		} else if (url.pathname === "/api/close-tab" && req.method === "POST") {
+			// The done screen's tab, closed from here when the page's own close is refused (close-tab.ts).
+			await handleCloseTabRoute(req, res);
 		} else if (url.pathname === "/api/exit" && req.method === "POST") {
 			// Exit posts carry no body: the nonce rides the query string.
 			if (checkServerSession({ serverSession: url.searchParams.get("serverSession") ?? undefined }, serverSession) === "mismatch") {
