@@ -21,6 +21,7 @@ import {
   setStorageBackend,
   type StorageBackend,
 } from "@plannotator/ui/utils/storage";
+import { configStore } from "@plannotator/ui/config";
 
 const hasDom = typeof document !== "undefined";
 
@@ -257,5 +258,37 @@ describe.if(hasDom)("config.json annotateView", () => {
     expect(document.body.textContent).toContain("The second body paragraph.");
     expect(pressed("Wide")).toBe(true);
     expect(document.querySelector('nav[aria-label="Table of contents"]')).toBeNull();
+  });
+
+  // The choice used to last one session: every review opened in the plain layout again.
+  test("the toolbar's Wide or Focus is remembered for the next review, and turning it off forgets it", async () => {
+    await mount(annotateFile({}));
+    await act(async () => { toolbarButton("Focus")?.click(); });
+    expect(memory.get("plannotator-annotate-view-choice")).toBe("focus");
+    await act(async () => { toolbarButton("Wide")?.click(); });
+    expect(memory.get("plannotator-annotate-view-choice")).toBe("wide");
+    await act(async () => { toolbarButton("Wide")?.click(); });
+    expect(memory.has("plannotator-annotate-view-choice")).toBe(false);
+  });
+
+  // A new review is a new page: its settings are read from the cookies afresh (one store serves this file's tests).
+  const newPageWith = (choice: string) => {
+    setStorageBackend(memoryBackend);
+    memory.set("plannotator-annotate-view-choice", choice);
+    configStore.loadFromBackend();
+  };
+
+  test("a new review opens in the view last chosen", async () => {
+    newPageWith("wide");
+    await mount(annotateFile({}));
+    expect(pressed("Wide")).toBe(true);
+    expect(pressed("Focus")).toBe(false);
+  });
+
+  test("config.json's annotateView wins over the view last chosen", async () => {
+    newPageWith("wide");
+    await mount(annotateFile({ annotateView: "focus" }));
+    expect(pressed("Focus")).toBe(true);
+    expect(pressed("Wide")).toBe(false);
   });
 });
