@@ -32,6 +32,9 @@
 13. **No block outline on a page open**: Vim's BLOCK starts on the first key (`useVimSelection`,
     the bridge's `focus-vim`).
 14. Those, described in the agent guides (its own commit, as 5).
+15. **An HTML page opens in Interact** (App's `htmlAnnotateArmed`): its own controls answer the
+    first click, and `Mod+Shift+A` arms Annotate.
+16. That, described in the agent guides (its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
@@ -49,7 +52,7 @@
   releases came after it.
 - `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
   the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' eighteen suites in upstream's test sandbox (`--full`: every unit
+  `bun run typecheck` and the patches' nineteen suites in upstream's test sandbox (`--full`: every unit
   suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
   on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
   a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.
