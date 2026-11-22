@@ -23,7 +23,7 @@ import {
 } from './documentTitle';
 import { type Origin, getAgentName } from '@plannotator/shared/agents';
 import { isNothingToSendFeedbackBody } from '@plannotator/shared/annotate-decision';
-import { isDiagramRenderKind, shouldStripFrontmatter } from '@plannotator/shared/annotatable';
+import { isAnnotatableDocPath, isDiagramRenderKind, shouldStripFrontmatter } from '@plannotator/shared/annotatable';
 import {
   annotateBundleBaseName,
   annotateBundleIndexOf,
@@ -33,7 +33,7 @@ import {
   parseAnnotateBundle,
   type AnnotateBundleFile,
 } from '@plannotator/shared/annotate-bundle';
-import { setExtraMarkdownExtensions } from '@plannotator/ui/utils/markdownExtensions';
+import { getExtraMarkdownExtensions, setExtraMarkdownExtensions } from '@plannotator/ui/utils/markdownExtensions';
 import { repoLabel } from '@plannotator/ui/utils/repoLabel';
 import { installPlainTextPaste } from '@plannotator/ui/utils/pasteInsert';
 import { documentRendersHtml, htmlAssetRouteFromDocument, resolveHtmlLinkIntent } from '@plannotator/ui/utils/htmlLinkNavigation';
@@ -88,7 +88,7 @@ import { getOctarineSettings, isOctarineConfigured } from '@plannotator/ui/utils
 import { getNotionSettings, getNotionParentPageId, isNotionConfigured, setNotionAvailable } from '@plannotator/ui/utils/notion';
 import { getDefaultNotesApp } from '@plannotator/ui/utils/defaultNotesApp';
 import { agentSwitchTargetLabel, getAgentSwitchDefaults, getAgentSwitchSettings, getEffectiveAgentName } from '@plannotator/ui/utils/agentSwitch';
-import { adoptServerSession, noteServerSessionMismatch, withServerSession, withServerSessionQuery } from '@plannotator/ui/utils/serverSession';
+import { adoptServerSession, currentServerSession, noteServerSessionMismatch, withServerSession, withServerSessionQuery } from '@plannotator/ui/utils/serverSession';
 import { assertSendOk, PLAN_REVISED_CODE, refusalCode, throwUnreachable } from '@plannotator/ui/utils/sendFailure';
 import { dismissSendFailureToast, sendSettled, sendStarted, showSendFailureToast } from '@plannotator/ui/components/SendFailureToast';
 import { ServerSessionReplacedBanner } from '@plannotator/ui/components/ServerSessionReplacedBanner';
@@ -277,6 +277,7 @@ import { AppHeader } from './components/AppHeader';
 import { useLiveAnnotateVersion, type LiveAnnotateVersion } from './hooks/useLiveAnnotateVersion';
 import { useHtmlRefresh, type HtmlRefreshedDocument } from './hooks/useHtmlRefresh';
 import { useAnnotationJump } from './hooks/useAnnotationJump';
+import { useDocumentHistory, type DocumentHistory } from './hooks/useDocumentHistory';
 import { planRevisionBlocker, usePlanRevisions, type PlanRevisionSnapshot } from './hooks/usePlanRevisions';
 import { AgentNudgeBanner } from './components/AgentNudgeBanner';
 import { useDocumentWebMcp } from './webmcp/useDocumentWebMcp';
@@ -2170,11 +2171,16 @@ const App: React.FC = () => {
     // The switcher moves through the files without popping the sidebar open.
     if (file) void openBundleFile(file.path, { revealSidebar: false });
   }, [bundleFiles, openBundleFile]);
-  // The first file opens as soon as the session loads.
+  // The first file opens as soon as the session loads, in place of the
+  // folder's empty state (its history entry, not a new one), unless the
+  // tab's history names a page to reopen (useDocumentHistory, set below).
   const bundleOpenedRef = useRef(false);
+  const documentHistoryRef = useRef<DocumentHistory | null>(null);
   useEffect(() => {
     if (!bundleFiles || bundleOpenedRef.current || isLoading) return;
     bundleOpenedRef.current = true;
+    if (documentHistoryRef.current?.restoresPage()) return;
+    documentHistoryRef.current?.replaceNext();
     openBundleFileAt(0);
   }, [bundleFiles, isLoading, openBundleFileAt]);
 
@@ -2321,12 +2327,11 @@ const App: React.FC = () => {
     if (bundleBackPath) {
       // The bundle file is reopened (it is a linked document, not the root),
       // so ask for the reader's place in it explicitly, as back() restores
-      // the root's.
-      void openBundleFile(bundleBackPath, {
+      // the root's. The open's promise tells a caller when it has ended.
+      return openBundleFile(bundleBackPath, {
         revealSidebar: false,
         restoreScroll: options?.restoreScroll !== false,
       });
-      return;
     }
     linkedDocHook.back(options?.restoreScroll === false ? { restoreScroll: false } : undefined);
     if (isEditingMarkdown) {
@@ -5443,13 +5448,21 @@ const App: React.FC = () => {
 
   /** Open a document the way a sidebar click would, so the file browser's
    *  active file, the doc URL and the linked document stay in step. */
-  const navigateToDocument = React.useCallback(async (path: string): Promise<void> => {
+  // `restoreScroll`: put the reader back where they were in the document (a
+  // step back or forward through the tab's history); other callers scroll to
+  // a target of their own.
+  const navigateToDocument = React.useCallback(async (
+    path: string,
+    navigateOptions?: { restoreScroll?: boolean },
+  ): Promise<void> => {
     // Same rule a link click between HTML documents follows (#1532): an
     // HTML destination owns the viewport, so arriving there must not pop the
     // left sidebar open. A markdown destination keeps the markdown
     // convention, where the sidebar's "Viewing / Back to …" header is the
     // way out.
-    const openOptions = documentRendersHtml(path, convertHtml) ? { revealSidebar: false } : undefined;
+    const restoreScroll = navigateOptions?.restoreScroll === true;
+    const htmlOptions = documentRendersHtml(path, convertHtml) ? { revealSidebar: false } : undefined;
+    const openOptions = restoreScroll ? { ...htmlOptions, restoreScroll } : htmlOptions;
     if (bundleFiles && annotateBundleIndexOf(bundleFiles, path) >= 0) {
       await openBundleFile(path, openOptions);
       return;
@@ -5462,12 +5475,32 @@ const App: React.FC = () => {
     // A linked-doc session's source document is reached by going back, not by
     // opening it as a linked doc (useLinkedDoc treats that as a backlink).
     if (sourceFilePath && path === sourceFilePath && linkedDocHook.isActive) {
-      // Every caller of this scrolls to its own target once the root is back.
-      handleLinkedDocBack({ restoreScroll: false });
+      // Every other caller scrolls to its own target once the root is back.
+      await handleLinkedDocBack({ restoreScroll });
       return;
     }
     await linkedDocHook.open(path, undefined, undefined, openOptions);
   }, [bundleFiles, convertHtml, fileBrowser.dirs, handleFileBrowserSelect, handleLinkedDocBack, linkedDocHook, openBundleFile, sourceFilePath]);
+
+  // Each document the reviewer opens is an entry of the tab's history, with
+  // its own address (useDocumentHistory). Off where the app does not own the
+  // tab (a share link, a live app, an app framed by a host) and once the
+  // review is decided.
+  const isTopWindow = typeof window !== 'undefined' && window.top === window;
+  const localSourceFile = sourceFilePath && !/^[a-z][a-z0-9+.-]*:\/\//i.test(sourceFilePath) ? sourceFilePath : null;
+  const documentHistoryEnabled = isApiMode && !liveApp && !openedWithHash && isTopWindow && !submitted && !agentClosed;
+  const documentHistory = useDocumentHistory({
+    enabled: documentHistoryEnabled,
+    ready: !isLoading,
+    activeDoc: linkedDocHook.isActive ? linkedDocHook.filepath : null,
+    base: localSourceFile ? dirnameBrowserPath(localSourceFile) : sessionFolderPath ? normalizeBrowserPath(sessionFolderPath) : null,
+    rootFile: localSourceFile,
+    session: currentServerSession(),
+    open: (path, historyOptions) => navigateToDocument(path, historyOptions),
+    showRoot: () => handleLinkedDocBack(),
+    opensFromAddress: (path) => isAnnotatableDocPath(path, getExtraMarkdownExtensions()),
+  });
+  documentHistoryRef.current = documentHistory;
 
   const jumpToAnnotation = useAnnotationJump({
     currentPath: currentDocumentPath,
