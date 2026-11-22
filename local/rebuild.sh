@@ -46,6 +46,7 @@ suites=(
   packages/editor/App.htmlChrome.test.tsx
   packages/server/close-tab.test.ts
   packages/ui/hooks/useAutoClose.test.tsx
+  packages/ui/hooks/useInputMethodSwitch.test.tsx
   packages/ui/utils/annotationModes.test.ts
   packages/editor/App.decisionControl.test.tsx
   packages/ui/utils/inputMethod.test.ts
