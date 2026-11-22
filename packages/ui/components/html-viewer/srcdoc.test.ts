@@ -476,10 +476,11 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     });
     expect(document.body.getAttribute("tabindex")).toBe("-1");
     expect(document.body.hasAttribute("data-plannotator-vim-focus-owner")).toBe(true);
-    const initial = document.querySelector(".plannotator-pinpoint-hover");
-    expect(initial?.textContent).toBe("Keyboard document");
-    expect(document.querySelector("[data-plannotator-vim-badge]")?.textContent)
-      .toBe("BLOCK · PINPOINT");
+    // Focus takes the keys but outlines nothing: an outline nobody asked for
+    // sat over every page opened. BLOCK starts on the first key.
+    const hiddenBadge = () => document.querySelector<HTMLElement>("[data-plannotator-vim-badge]")?.style.display;
+    expect(document.querySelector(".plannotator-pinpoint-hover")).toBeNull();
+    expect(hiddenBadge()).toBe("none");
 
     const tab = new KeyboardEvent("keydown", {
       key: "Tab",
@@ -488,8 +489,7 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     });
     document.body.dispatchEvent(tab);
     expect(tab.defaultPrevented).toBe(false);
-    expect(document.querySelector(".plannotator-pinpoint-hover")?.textContent)
-      .toBe("Keyboard document");
+    expect(document.querySelector(".plannotator-pinpoint-hover")).toBeNull();
 
     const move = new KeyboardEvent("keydown", {
       key: "j",
@@ -500,6 +500,8 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     expect(move.defaultPrevented).toBe(true);
     expect(document.querySelector(".plannotator-pinpoint-hover")?.textContent)
       .toBe("First paragraph");
+    expect(document.querySelector("[data-plannotator-vim-badge]")?.textContent)
+      .toBe("BLOCK · PINPOINT");
 
     const bridgeMessages: Array<Record<string, unknown>> = [];
     const capture = (event: MessageEvent) => {

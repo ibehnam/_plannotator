@@ -344,12 +344,14 @@ export function useVimSelection({
       pointerFocusRef.current = false;
       return;
     }
-    initializeSemanticNavigation();
+    // BLOCK starts on the reader's first key (handleKeyDown), never on focus
+    // or a new document: an outline nobody asked for sat over every page
+    // opened. A target a previous document named goes with it.
+    if (stateRef.current.phase !== 'inactive') setState(createInitialVimSelectionState());
   }, [
     contentVersion,
     enabled,
     focused,
-    initializeSemanticNavigation,
     setState,
   ]);
 
@@ -924,7 +926,7 @@ export function useVimSelection({
     if (!container) return;
     const graph = buildSemanticTargetGraph(container);
     const key = event.key;
-    const context = stateRef.current.phase;
+    let context = stateRef.current.phase;
     let handled = false;
 
     if (helpOpen) {
@@ -945,6 +947,8 @@ export function useVimSelection({
       if (current.phase === 'inactive') {
         current = initializeSemanticNavigation()
           ?? createInitialVimSelectionState();
+        // The first key starts BLOCK and acts in it: that is its context.
+        context = current.phase;
       }
 
       if (key === 'G') {

@@ -203,12 +203,14 @@ describe.if(hasDom)('Viewer Vim mode with repository fixtures', () => {
 
     expect(article.style.outline).toContain('none');
     expect(article.className).not.toContain('focus-visible:ring');
-    expect(article.dataset.vimPhase).toBe('block');
-    expect(host.querySelector('[data-pinpoint-overlay]')).not.toBeNull();
-    expect(host.querySelector<HTMLElement>('[data-pinpoint-label]')?.dataset.pinpointLabel)
-      .toContain('heading');
+    // Focus paints nothing (no "paragraph: …" pill on a document just opened);
+    // the first key starts BLOCK at the heading and moves on from it.
+    expect(article.dataset.vimPhase).toBe('inactive');
+    expect(host.querySelector('[data-pinpoint-overlay]')).toBeNull();
 
     act(() => { keydown(article, 'j'); });
+    expect(article.dataset.vimPhase).toBe('block');
+    expect(host.querySelector('[data-pinpoint-overlay]')).not.toBeNull();
     expect(host.querySelector<HTMLElement>('[data-pinpoint-label]')?.dataset.pinpointLabel)
       .toContain('First paragraph');
 
