@@ -70,6 +70,11 @@ class SilentEventSource {
   removeEventListener(): void {}
 }
 
+/** Documents a link may open, by the path `/api/doc` resolves them to. */
+const linkedDocs: Record<string, string> = {
+  "/tmp/second.md": "# Second document\n\nThe second body paragraph.\n",
+};
+
 function fetchFor(plan: Record<string, unknown>, draft: unknown = null): typeof fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
@@ -77,6 +82,15 @@ function fetchFor(plan: Record<string, unknown>, draft: unknown = null): typeof 
     const url = new URL(rawUrl, "http://localhost");
     const method = (init?.method ?? "GET").toUpperCase();
     if (url.pathname === "/api/plan") return Response.json(plan);
+    if (url.pathname === "/api/doc") {
+      const requested = url.searchParams.get("path") ?? "";
+      const base = url.searchParams.get("base");
+      const filepath = requested.startsWith("/") ? requested : `${base ?? "/tmp"}/${requested}`;
+      const markdown = linkedDocs[filepath];
+      return markdown === undefined
+        ? Response.json({ error: "File not found" }, { status: 404 })
+        : Response.json({ markdown, filepath, renderAs: "markdown" });
+    }
     if (url.pathname === "/api/archive/plans") return Response.json({ plans: [] });
     if (url.pathname === "/api/ai/capabilities") return Response.json({ available: false, providers: [] });
     if (url.pathname === "/api/draft") {
@@ -229,5 +243,19 @@ describe.if(hasDom)("config.json annotateView", () => {
     });
     expect(document.body.textContent).toContain("Step one.");
     expect(pressed("Focus")).toBe(false);
+  });
+
+  // Opening a page opened the contents rail, which ended Wide and Focus on every link.
+  test("following a link to another document keeps Wide, and opens no sidebar", async () => {
+    await mount({ ...annotateFile({}), plan: "# Review target\n\nSee [the second document](second.md) next.\n" });
+    await act(async () => { toolbarButton("Wide")?.click(); });
+    expect(pressed("Wide")).toBe(true);
+    const link = Array.from(document.querySelectorAll<HTMLAnchorElement>("a")).find((a) => a.textContent === "the second document");
+    expect(link).not.toBeUndefined();
+    await act(async () => { link!.click(); });
+    for (let attempt = 0; attempt < 10; attempt += 1) await settle();
+    expect(document.body.textContent).toContain("The second body paragraph.");
+    expect(pressed("Wide")).toBe(true);
+    expect(document.querySelector('nav[aria-label="Table of contents"]')).toBeNull();
   });
 });
