@@ -53,6 +53,27 @@ export const PAGE_HISTORY_MESSAGE = "plannotator-bridge-page-history";
 /** The farthest one such step may move the host's history, either way. */
 export const MAX_PAGE_HISTORY_DELTA = 100;
 
+/**
+ * What the host sends on that port to be handed the keys a person presses in
+ * the page: `{ type, claims, escape }`, `claims: null` to stop. `claims` are the
+ * Cmd chords the host serves before the page; `escape`, that Escape is the
+ * host's while one of its overlays is open.
+ */
+export const PAGE_KEYS_MESSAGE = "plannotator-bridge-page-keys";
+
+/** What the guard sends on that port for a key: `{ type, event, key, code, location, repeat, metaKey, ctrlKey, shiftKey, altKey }`. */
+export const PAGE_KEY_MESSAGE = "plannotator-bridge-page-key";
+
+/** The most chords one keys message may claim. */
+export const MAX_PAGE_KEY_CLAIMS = 64;
+
+/** A Cmd chord the host serves before the page (never with Ctrl): `key` as `bindingDescriptor` gives it. */
+export interface PageKeyClaim {
+  key: string;
+  shift: boolean;
+  alt: boolean;
+}
+
 /** The query parameter that carries a served frame's key (removed by the guard). */
 export const LINK_KEY_PARAM = "__pnk";
 
@@ -183,6 +204,111 @@ export const LINK_GUARD_FUNCTION = `(function(inlineKey) {
     try { portPost(port, { type: LINK_CLICK, href: href }); } catch (ex) { return false; }
     return true;
   }
+  // Keys (HtmlViewer's forwardPageKeys): a host that asks on this port is handed
+  // the keys a person presses here. The Cmd chords it claims (never with Ctrl,
+  // which is the browser's and the system's) and, while it says so, Escape are
+  // its own: taken before any page listener and sent at once. Every other key
+  // goes to the page first and is sent after every listener had its turn, if
+  // the page did not use it: it reached the window, nothing cancelled it, no
+  // composition was under way. A key typed into one of the page's fields stays
+  // the page's, and so do Cmd+C, X, V and A (copy, cut, paste, select all). A
+  // keyup always goes, so a held key ends. Only a person's keys (isTrusted).
+  var PAGE_KEYS = '${PAGE_KEYS_MESSAGE}';
+  var PAGE_KEY = '${PAGE_KEY_MESSAGE}';
+  // The claims as one string of '|KEY:shift alt|' entries, so a page's own
+  // Array methods are never called on them; null: keys are off.
+  var keyClaims = null;
+  var escapeClaimed = false;
+  var isArray = Array.isArray;
+  var dataOf = getterOf(MessageEvent.prototype, 'data');
+  var keyOf = getterOf(KeyboardEvent.prototype, 'key');
+  var codeOf = getterOf(KeyboardEvent.prototype, 'code');
+  var locationOf = getterOf(KeyboardEvent.prototype, 'location');
+  var repeatOf = getterOf(KeyboardEvent.prototype, 'repeat');
+  var composingOf = getterOf(KeyboardEvent.prototype, 'isComposing');
+  var metaOf = getterOf(KeyboardEvent.prototype, 'metaKey');
+  var ctrlOf = getterOf(KeyboardEvent.prototype, 'ctrlKey');
+  var shiftOf = getterOf(KeyboardEvent.prototype, 'shiftKey');
+  var altOf = getterOf(KeyboardEvent.prototype, 'altKey');
+  var typeOf = getterOf(Event.prototype, 'type');
+  var usedOf = getterOf(Event.prototype, 'defaultPrevented');
+  var prevent = callOf(Event.prototype.preventDefault);
+  var stopNow = callOf(Event.prototype.stopImmediatePropagation);
+  var tagOf = getterOf(Element.prototype, 'tagName');
+  var editableOf = getterOf(HTMLElement.prototype, 'isContentEditable');
+  var upper = callOf(String.prototype.toUpperCase);
+  var later = callOf(window.setTimeout);
+  var reached = new WeakSet();
+  var markReached = callOf(WeakSet.prototype.add);
+  var wasReached = callOf(WeakSet.prototype.has);
+  function keyName(e) {
+    var name = keyOf(e);
+    if (typeof name !== 'string') return '';
+    return name.length === 1 ? upper(name) : name;
+  }
+  function inTextField(t) {
+    if (!t || nodeTypeOf(t) !== 1) return false;
+    var tag = tagOf(t);
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    try { if (editableOf(t)) return true; } catch (ex) {}
+    return !!closest(t, '[contenteditable]:not([contenteditable="false"])');
+  }
+  function pagesOwn(e) {
+    if (!(metaOf(e) || ctrlOf(e)) || shiftOf(e) || altOf(e)) return false;
+    var name = keyName(e);
+    return name === 'C' || name === 'X' || name === 'V' || name === 'A';
+  }
+  function claimed(e) {
+    if (keyName(e) === 'Escape') return escapeClaimed && !composingOf(e);
+    if (!metaOf(e) || ctrlOf(e) || pagesOwn(e) || inTextField(targetOf(e))) return false;
+    return indexOf(keyClaims, '|' + keyName(e) + ':' + (shiftOf(e) ? 1 : 0) + (altOf(e) ? 1 : 0) + '|') >= 0;
+  }
+  function sendKey(e) {
+    try {
+      portPost(port, {
+        type: PAGE_KEY, event: typeOf(e), key: keyOf(e), code: codeOf(e), location: locationOf(e), repeat: repeatOf(e),
+        metaKey: metaOf(e), ctrlKey: ctrlOf(e), shiftKey: shiftOf(e), altKey: altOf(e)
+      });
+    } catch (ex) {}
+  }
+  window.addEventListener('keydown', function(e) {
+    if (keyClaims === null || !e.isTrusted) return;
+    if (claimed(e)) {
+      prevent(e);
+      stopNow(e);
+      sendKey(e);
+      return;
+    }
+    later(window, function() {
+      if (keyClaims === null || !wasReached(reached, e) || usedOf(e) || composingOf(e)) return;
+      if (inTextField(targetOf(e)) || pagesOwn(e)) return;
+      sendKey(e);
+    }, 0);
+  }, true);
+  window.addEventListener('keydown', function(e) { if (e.isTrusted) markReached(reached, e); });
+  window.addEventListener('keyup', function(e) {
+    if (keyClaims === null || !e.isTrusted) return;
+    later(window, function() { if (keyClaims !== null) sendKey(e); }, 0);
+  }, true);
+  port.onmessage = function(e) {
+    var data = dataOf(e);
+    if (!data || data.type !== PAGE_KEYS) return;
+    var claims = data.claims;
+    if (claims === null) {
+      keyClaims = null;
+      escapeClaimed = false;
+      return;
+    }
+    if (!isArray(claims) || claims.length > ${MAX_PAGE_KEY_CLAIMS}) return;
+    var next = '|';
+    for (var i = 0; i < claims.length; i++) {
+      var c = claims[i];
+      if (!c || typeof c.key !== 'string' || c.key.length > 32 || typeof c.shift !== 'boolean' || typeof c.alt !== 'boolean') return;
+      next += c.key + ':' + (c.shift ? 1 : 0) + (c.alt ? 1 : 0) + '|';
+    }
+    keyClaims = next;
+    escapeClaimed = data.escape === true;
+  };
   try {
     Object.defineProperty(window, '__plannotatorLinkGuard', {
       value: Object.freeze({ follow: follow }),

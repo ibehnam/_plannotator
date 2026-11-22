@@ -17,6 +17,8 @@ import { AnnotationType } from '../../types';
 import { BRIDGE_PROTOCOL_VERSION } from './bridge-script';
 import { THUMBS_UP_LABEL } from '../../utils/quickLabels';
 import { quickLabelText } from '../../utils/annotationModes';
+import { PAGE_KEY_MESSAGE, PAGE_KEYS_MESSAGE } from './linkGuard';
+import { bridgeLinkPort } from '../../test-setup/bridgeLinkPort';
 
 const hasDom = typeof document !== 'undefined';
 const hookModule = hasDom ? await import('./useHtmlAnnotation') : null;
@@ -2037,5 +2039,124 @@ describe.if(hasDom)('parseHtmlElementContext (validated DTO)', () => {
     const context = parse()({ tag: 'div', rect: { x: 1, y: 2, w: NaN, h: 4, vw: 5, vh: 6 }, children: 3.7 })!;
     expect(context.rect).toBeUndefined();
     expect(context.children).toBe(3);
+  });
+});
+
+// The page's keys (HtmlViewer's forwardPageKeys): the link guard hands the
+// host the keys a person presses in the page, on its port, and the host runs
+// each on the frame's element, where its own shortcuts and Escape rungs see it
+// as a key pressed with focus in the page (linkGuard.ts holds the frame side).
+describe.if(hasDom)('keys pressed in the page', () => {
+  const CLAIMS = [{ key: 'Enter', shift: false, alt: false }];
+
+  async function mountKeys(props: Record<string, unknown>) {
+    const HtmlViewer = htmlViewerModule!.HtmlViewer;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    mountedRoots.push(root);
+    await act(async () => {
+      root.render(
+        <HtmlViewer
+          rawHtml="<html><body><p>Page text</p></body></html>"
+          annotations={[]}
+          onAddAnnotation={() => {}}
+          onSelectAnnotation={() => {}}
+          selectedAnnotationId={null}
+          mode="selection"
+          inputMethod="pinpoint"
+          {...props}
+        />,
+      );
+    });
+    const iframe = host.querySelector<HTMLIFrameElement>('iframe');
+    if (!iframe?.contentWindow) throw new Error('HTML iframe missing');
+    const port = await bridgeLinkPort(iframe);
+    const asked: Array<Record<string, unknown>> = [];
+    port.onmessage = (event) => asked.push(event.data as Record<string, unknown>);
+    // What ran on the frame's element, as this document's listeners see it.
+    const ran: string[] = [];
+    const record = (e: Event) => {
+      const k = e as KeyboardEvent;
+      ran.push(`${k.type} ${k.metaKey ? 'Meta+' : ''}${k.key} on ${(k.target as HTMLElement).tagName}`);
+    };
+    window.addEventListener('keydown', record);
+    window.addEventListener('keyup', record);
+    removeListeners.push(() => {
+      window.removeEventListener('keydown', record);
+      window.removeEventListener('keyup', record);
+    });
+    // The event name is any string, so a test can send a malformed one.
+    const key = (event: string, init: Record<string, unknown>) => ({
+      type: PAGE_KEY_MESSAGE, event, code: '', location: 0, repeat: false,
+      metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...init,
+    });
+    const onPort = async (data: Record<string, unknown>) => {
+      await act(async () => {
+        port.postMessage(data);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    };
+    const onWindow = async (data: Record<string, unknown>) => {
+      await act(async () => {
+        window.dispatchEvent(new MessageEvent('message', { source: iframe.contentWindow, data }));
+      });
+    };
+    const settle = async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    };
+    return { iframe, asked, ran, key, onPort, onWindow, settle };
+  }
+
+  const removeListeners: Array<() => void> = [];
+  afterEach(() => {
+    for (const remove of removeListeners.splice(0)) remove();
+  });
+
+  test('the host asks the guard for keys on its port: its claims, and Escape while one of its overlays is open', async () => {
+    const { asked, onWindow, settle } = await mountKeys({ forwardPageKeys: CLAIMS });
+    await settle();
+    expect(asked.at(-1)).toEqual({ type: PAGE_KEYS_MESSAGE, claims: CLAIMS, escape: false });
+    await onWindow({
+      type: 'plannotator-bridge-selection', text: 'Page text', pinpoint: true,
+      rect: { top: 10, left: 10, width: 120, height: 24 },
+      anchor: { selector: 'p:nth-of-type(1)', tagName: 'p', text: 'Page text' },
+    });
+    await settle();
+    expect(document.querySelector('[data-comment-popover]')).not.toBeNull();
+    expect(asked.at(-1)).toEqual({ type: PAGE_KEYS_MESSAGE, claims: CLAIMS, escape: true });
+  });
+
+  test('a key on the port runs on the frame element: a keydown only while the frame holds focus, a keyup always', async () => {
+    const { iframe, ran, key, onPort } = await mountKeys({ forwardPageKeys: CLAIMS });
+    (document.activeElement as HTMLElement | null)?.blur();
+    await onPort(key('keydown', { key: 'Enter', code: 'Enter', metaKey: true }));
+    expect(ran).toEqual([]);
+    iframe.focus();
+    await onPort(key('keydown', { key: 'Enter', code: 'Enter', metaKey: true }));
+    iframe.blur();
+    await onPort(key('keyup', { key: 'Alt', code: 'AltLeft' }));
+    expect(ran).toEqual(['keydown Meta+Enter on IFRAME', 'keyup Alt on IFRAME']);
+  });
+
+  test('a key message on the window is refused, and a malformed one on the port runs nothing', async () => {
+    const { iframe, ran, key, onPort, onWindow } = await mountKeys({ forwardPageKeys: CLAIMS });
+    iframe.focus();
+    await onWindow(key('keydown', { key: 'Enter', code: 'Enter', metaKey: true }));
+    await onPort(key('keydown', { key: 'x'.repeat(33) }));
+    await onPort(key('keypress', { key: 'Enter' }));
+    await onPort(key('keydown', { key: 'Enter', metaKey: 'yes' }));
+    expect(ran).toEqual([]);
+  });
+
+  test('a host that does not ask (the Inbox) gets no keys and runs none', async () => {
+    const { iframe, asked, ran, key, onPort, settle } = await mountKeys({});
+    await settle();
+    expect(asked.filter((m) => m.type === PAGE_KEYS_MESSAGE)).toEqual([]);
+    iframe.focus();
+    await onPort(key('keydown', { key: 'Enter', code: 'Enter', metaKey: true }));
+    expect(ran).toEqual([]);
   });
 });

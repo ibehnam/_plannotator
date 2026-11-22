@@ -59,6 +59,7 @@ import {
   type HtmlContentWidth,
   type HtmlLiveSession,
   type HtmlScrollClear,
+  type PageKey,
 } from "./useHtmlAnnotation";
 import {
   THEME_TOKENS,
@@ -74,7 +75,7 @@ import {
   resolveBridgeScriptUrl,
   type SandboxShimOffer,
 } from "./srcdoc";
-import { newLinkKey, withLinkKey } from "./linkGuard";
+import { newLinkKey, withLinkKey, type PageKeyClaim } from "./linkGuard";
 
 const PREFIX = "plannotator-bridge-";
 
@@ -363,6 +364,16 @@ export interface HtmlViewerProps {
    *  page (utils/annotationModes). Honored only while the frame holds focus.
    *  Absent: the bridge forwards none, and the page keeps the keys. */
   onModeKey?: (digit: number) => void;
+  /** The page's keys are this document's too (the review app; the Inbox
+   *  leaves it absent): the link guard hands over, on its port, every key a
+   *  person presses in the page that the page did not use, and these Cmd
+   *  chords (never with Ctrl) before the page sees them, and Escape too while
+   *  one of this viewer's overlays is open. Each runs on the frame's element,
+   *  where this document's own shortcuts and Escape rungs see it as a key
+   *  pressed with focus in the page: a keydown only while the frame holds
+   *  focus, a keyup always. Keys typed into the page's own fields, and Cmd+C,
+   *  X, V and A, stay the page's. Absent: the page keeps its keys, as before. */
+  forwardPageKeys?: readonly PageKeyClaim[];
   /** Content above the page, inside the viewer's own column (a full-viewport
    *  surface's annotation toolstrip): the page's frame takes the height left.
    *  Absent: nothing above the page, as before. */
@@ -710,6 +721,7 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       stepInInteract = false,
       onPageEscape,
       onModeKey,
+      forwardPageKeys,
       header,
       vimModeEnabled = false,
       vimHudEnabled = false,
@@ -1116,6 +1128,27 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     // The overlay on top, closed as its own Escape closes it: the bridge's
     // overlay-escape (an Escape pressed with focus inside the page) runs this.
     const closeHostOverlayRef = useRef<() => void>(() => {});
+    // A key a person pressed in the page (forwardPageKeys), run on the frame's
+    // element, where this document's shortcuts and Escape rungs see it as a
+    // key pressed with focus in the page: a keydown only while the frame holds
+    // focus, a keyup always (a held Alt ends wherever focus went).
+    const runPageKey = useCallback((key: PageKey) => {
+      const iframe = iframeRef.current;
+      if (!iframe || (key.event === "keydown" && document.activeElement !== iframe)) return;
+      iframe.dispatchEvent(new KeyboardEvent(key.event, {
+        key: key.key,
+        code: key.code,
+        location: key.location,
+        repeat: key.repeat,
+        metaKey: key.metaKey,
+        ctrlKey: key.ctrlKey,
+        shiftKey: key.shiftKey,
+        altKey: key.altKey,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
+    }, []);
     const hook = useHtmlAnnotation({
       iframeRef,
       enabled: !readOnly,
@@ -1129,6 +1162,7 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       onPageChange,
       onLinkClick: onOpenLink ? openLinkWithFrame : undefined,
       onPageHistory: liveMode || bridgeUrl ? undefined : onPageHistory,
+      onPageKey: forwardPageKeys && !liveMode ? runPageKey : undefined,
       onBridgePointer: handleBridgePointer,
       onUnanchoredChange: handleBridgeUnanchored,
       maxAdditionalTargets,
@@ -1590,6 +1624,14 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       if (iframeReadyVersion === 0) return;
       postToBridge({ type: `${PREFIX}set-host-overlay`, open: hostOverlayOpen });
     }, [iframeReadyVersion, hostOverlayOpen]);
+
+    // The page's keys, asked of the link guard (forwardPageKeys): its claims,
+    // and Escape while one of these overlays is open. Asked again on every
+    // load's port. Never in live mode, whose frame has no guard.
+    const setPageKeys = hook.setPageKeys;
+    useEffect(() => {
+      setPageKeys(forwardPageKeys && !liveMode ? { claims: forwardPageKeys, escape: hostOverlayOpen } : null);
+    }, [setPageKeys, forwardPageKeys, liveMode, hostOverlayOpen]);
 
     // The page's forms and in-page links work as in a tab (`pageNavigation`).
     useEffect(() => {

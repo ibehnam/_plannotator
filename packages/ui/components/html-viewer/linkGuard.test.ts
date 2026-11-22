@@ -16,7 +16,9 @@
  * DOM-gated: runs under DOM_TESTS=1 (happy-dom), from tests/dom-test-list.txt.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { LINK_GUARD_FUNCTION, linkGuardScriptTag, newLinkKey, withLinkKey } from './linkGuard';
+import { defineShortcutScope } from '../../shortcuts/core';
+import { LINK_GUARD_FUNCTION, PAGE_KEY_MESSAGE, PAGE_KEYS_MESSAGE, linkGuardScriptTag, newLinkKey, withLinkKey } from './linkGuard';
+import { pageKeyClaims } from './pageKeys';
 
 const hasDom = typeof document !== 'undefined';
 const KEY = 'a'.repeat(32);
@@ -46,6 +48,26 @@ describe('withLinkKey', () => {
     expect(a).toMatch(/^[0-9a-f]{32}$/);
     expect(newLinkKey()).not.toBe(a);
     expect(() => linkGuardScriptTag("x');alert(1);('")).toThrow();
+  });
+});
+
+describe('pageKeyClaims', () => {
+  test("a surface's Cmd chords, once each; never a Ctrl chord, a bare key or what plain data cannot match", () => {
+    const scope = (id: string, bindings: string[][]) => defineShortcutScope({
+      id,
+      title: id,
+      shortcuts: Object.fromEntries(bindings.map((b, i) => [`a${i}`, { description: id, bindings: b, section: 'S' }])),
+    });
+    const registry = [
+      scope('one', [['Mod+Enter'], ['Mod+Shift+A', 'Mod+.'], ['Ctrl+B'], ['Escape'], ['Shift+1'], ['G G'], ['Mod+1']]),
+      scope('two', [['Mod+Enter'], ['Mod+Alt+K']]),
+    ];
+    expect(pageKeyClaims(registry)).toEqual([
+      { key: 'Enter', shift: false, alt: false },
+      { key: 'A', shift: true, alt: false },
+      { key: '.', shift: false, alt: false },
+      { key: 'K', shift: false, alt: true },
+    ]);
   });
 });
 
@@ -213,5 +235,131 @@ describe.if(hasDom)('the link guard in a frame', () => {
     expect(w.__plannotatorLinkGuard).toBe(guard);
     new Function(`${LINK_GUARD_FUNCTION}('${'c'.repeat(32)}');`)();
     expect(offers).toHaveLength(1);
+  });
+
+  // Keys (HtmlViewer's forwardPageKeys): the host asks on the port for the
+  // keys a person presses in the page, naming the Cmd chords it serves first.
+  describe('keys', () => {
+    const ENTER = { key: 'Enter', shift: false, alt: false };
+    const TOGGLE = { key: 'A', shift: true, alt: false };
+    /** What the host sends on its end of the port. */
+    async function hostAsks(claims: unknown, escape = false): Promise<void> {
+      hostPort!.postMessage({ type: PAGE_KEYS_MESSAGE, claims, escape });
+      await settle();
+    }
+    /** A key pressed by a person (`isTrusted`, which only the browser sets) or dispatched by a script. */
+    function press(el: Element, init: KeyboardEventInit, { trusted = true, type = 'keydown' } = {}): KeyboardEvent {
+      const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init });
+      if (trusted) Object.defineProperty(event, 'isTrusted', { value: true });
+      el.dispatchEvent(event);
+      return event;
+    }
+    const keysSent = () => sent.filter((m) => m.type === PAGE_KEY_MESSAGE).map((m) => `${m.event} ${m.metaKey ? 'Meta+' : ''}${m.shiftKey ? 'Shift+' : ''}${m.key}`);
+    /** A page listener after the guard's: what the page saw. */
+    let pageSaw: string[] = [];
+    const pageListener = (e: Event) => pageSaw.push((e as KeyboardEvent).key);
+    beforeAll(() => window.addEventListener('keydown', pageListener, true));
+    afterAll(() => window.removeEventListener('keydown', pageListener, true));
+    afterEach(async () => {
+      pageSaw = [];
+      await hostAsks(null);
+      sent.length = 0;
+    });
+
+    test('nothing goes out until the host asks for keys, and nothing once it stops', async () => {
+      page('<p id="p">Text</p>');
+      press(document.querySelector('#p')!, { key: 'x', code: 'KeyX' });
+      await hostAsks([ENTER]);
+      await hostAsks(null);
+      press(document.querySelector('#p')!, { key: 'y', code: 'KeyY' });
+      await settle();
+      expect(keysSent()).toEqual([]);
+    });
+
+    test('a key the page did not use goes out once every listener had its turn, and its keyup too', async () => {
+      page('<p id="p">Text</p>');
+      await hostAsks([ENTER]);
+      const event = press(document.querySelector('#p')!, { key: 'x', code: 'KeyX' });
+      press(document.querySelector('#p')!, { key: 'Alt', code: 'AltLeft', altKey: true });
+      press(document.querySelector('#p')!, { key: 'Alt', code: 'AltLeft' }, { type: 'keyup' });
+      expect(keysSent()).toEqual([]);
+      expect(event.defaultPrevented).toBe(false);
+      await settle();
+      expect(keysSent()).toEqual(['keydown x', 'keydown Alt', 'keyup Alt']);
+      expect(sent[0]).toEqual({
+        type: PAGE_KEY_MESSAGE, event: 'keydown', key: 'x', code: 'KeyX', location: 0, repeat: false,
+        metaKey: false, ctrlKey: false, shiftKey: false, altKey: false,
+      });
+    });
+
+    test('a key the page used, stopped on its way, typed into its field, mid-composition or synthetic stays the page\'s', async () => {
+      page('<p id="p">Text</p><input id="field"><div contenteditable="true"><span id="rich">Rich</span></div>');
+      await hostAsks([ENTER]);
+      const p = document.querySelector('#p')!;
+      const used = (e: Event) => { if ((e as KeyboardEvent).key === 'u') e.preventDefault(); };
+      const stopped = (e: Event) => { if ((e as KeyboardEvent).key === 's') e.stopPropagation(); };
+      document.addEventListener('keydown', used);
+      document.addEventListener('keydown', stopped);
+      try {
+        press(p, { key: 'u', code: 'KeyU' });
+        press(p, { key: 's', code: 'KeyS' });
+        press(document.querySelector('#field')!, { key: 'f', code: 'KeyF' });
+        press(document.querySelector('#field')!, { key: 'Enter', code: 'Enter', metaKey: true });
+        press(document.querySelector('#rich')!, { key: 'r', code: 'KeyR' });
+        press(p, { key: 'c', code: 'KeyC', isComposing: true });
+        press(p, { key: 'z', code: 'KeyZ' }, { trusted: false });
+        press(p, { key: 'Enter', code: 'Enter', metaKey: true }, { trusted: false });
+        await settle();
+      } finally {
+        document.removeEventListener('keydown', used);
+        document.removeEventListener('keydown', stopped);
+      }
+      expect(keysSent()).toEqual([]);
+    });
+
+    test('a chord the host claims is taken before the page: used at once, never seen by the page, and sent', async () => {
+      page('<p id="p">Text</p>');
+      await hostAsks([ENTER, TOGGLE]);
+      const p = document.querySelector('#p')!;
+      const submit = press(p, { key: 'Enter', code: 'Enter', metaKey: true });
+      const toggle = press(p, { key: 'a', code: 'KeyA', metaKey: true, shiftKey: true });
+      expect(submit.defaultPrevented).toBe(true);
+      expect(toggle.defaultPrevented).toBe(true);
+      expect(pageSaw).toEqual([]);
+      // With Ctrl held it is no claim (Ctrl+Cmd is the browser's): the page gets it first.
+      const withCtrl = press(p, { key: 'Enter', code: 'Enter', metaKey: true, ctrlKey: true });
+      expect(withCtrl.defaultPrevented).toBe(false);
+      expect(pageSaw).toEqual(['Enter']);
+      await settle();
+      expect(keysSent()).toEqual(['keydown Meta+Enter', 'keydown Meta+Shift+a', 'keydown Meta+Enter']);
+    });
+
+    test('the claims update: a chord no longer claimed goes to the page first, and Escape is claimed while the host asks', async () => {
+      page('<p id="p">Text</p>');
+      const p = document.querySelector('#p')!;
+      await hostAsks([ENTER], true);
+      expect(press(p, { key: 'Escape', code: 'Escape' }).defaultPrevented).toBe(true);
+      expect(press(p, { key: 'Enter', code: 'Enter', metaKey: true }).defaultPrevented).toBe(true);
+      expect(pageSaw).toEqual([]);
+      await hostAsks([], false);
+      expect(press(p, { key: 'Escape', code: 'Escape' }).defaultPrevented).toBe(false);
+      expect(press(p, { key: 'Enter', code: 'Enter', metaKey: true }).defaultPrevented).toBe(false);
+      expect(pageSaw).toEqual(['Escape', 'Enter']);
+      await settle();
+      // Unused by the page, so both still reach the host, after the page.
+      expect(keysSent()).toEqual(['keydown Escape', 'keydown Meta+Enter', 'keydown Escape', 'keydown Meta+Enter']);
+    });
+
+    test('Cmd+C, X, V and A stay the page\'s, claimed or not; Cmd+Shift+A is a chord of its own', async () => {
+      page('<p id="p">Text</p>');
+      await hostAsks([{ key: 'C', shift: false, alt: false }, { key: 'A', shift: false, alt: false }, TOGGLE]);
+      const p = document.querySelector('#p')!;
+      for (const key of ['c', 'x', 'v', 'a']) {
+        expect(press(p, { key, code: `Key${key.toUpperCase()}`, metaKey: true }).defaultPrevented).toBe(false);
+      }
+      expect(press(p, { key: 'a', code: 'KeyA', metaKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+      await settle();
+      expect(keysSent()).toEqual(['keydown Meta+Shift+a']);
+    });
   });
 });

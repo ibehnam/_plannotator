@@ -3,6 +3,7 @@ import { annotateSettingsShortcutRegistry, planEditorShortcuts, planReviewSettin
 import { reviewSettingsShortcutRegistry } from '../review-editor/shortcuts';
 import {
   annotationModeShortcuts,
+  bindingDescriptor,
   createShortcutRegistry,
   decisionControlShortcuts,
   defineShortcutScope,
@@ -522,6 +523,37 @@ describe('shortcuts', () => {
         for (const binding of entry.bindings) {
           expect(matchesShortcutBinding(altC, binding)).toBe(false);
           expect(matchesShortcutBinding(macAltC, binding)).toBe(false);
+        }
+      }
+    }
+  });
+
+  // What an HTML page's frame compares a keydown against to serve a chord
+  // before the page (the link guard has no access to this module): plain
+  // data, and only for bindings that data can decide exactly as the matcher.
+  it('describes a single-press binding as plain data, and only one the matcher would decide alike', () => {
+    expect(bindingDescriptor('Mod+Enter')).toEqual({ mod: true, ctrl: false, shift: false, alt: false, key: 'Enter' });
+    expect(bindingDescriptor('Mod+Shift+A')).toEqual({ mod: true, ctrl: false, shift: true, alt: false, key: 'A' });
+    expect(bindingDescriptor('Mod+.')).toEqual({ mod: true, ctrl: false, shift: false, alt: false, key: '.' });
+    expect(bindingDescriptor('Ctrl+B')).toEqual({ mod: false, ctrl: true, shift: false, alt: false, key: 'B' });
+    expect(bindingDescriptor('Escape')).toEqual({ mod: false, ctrl: false, shift: false, alt: false, key: 'Escape' });
+    // Sequences, holds and double-taps, ranges, digits (matched by code too),
+    // Space and `-` (matched by code), and the shifted literals.
+    for (const binding of ['G G', 'Alt hold', 'Alt Alt', 'A-Z', 'Alt+1-0', 'Shift+1', 'Mod+1', 'Space', 'Ctrl+-', '?', 'Shift+{']) {
+      expect(bindingDescriptor(binding)).toBeNull();
+    }
+
+    // Every described chord of the plan surfaces matches as the shortcut runtime
+    // matches it, in either case of a letter.
+    for (const registry of [planReviewSettingsShortcutRegistry, annotateSettingsShortcutRegistry]) {
+      for (const entry of listRegistryShortcuts(registry)) {
+        for (const binding of entry.bindings) {
+          const d = bindingDescriptor(binding);
+          if (!d) continue;
+          for (const key of d.key.length === 1 ? [d.key, d.key.toLowerCase()] : [d.key]) {
+            const event = { key, code: '', metaKey: d.mod, ctrlKey: d.ctrl, shiftKey: d.shift, altKey: d.alt } as KeyboardEvent;
+            expect(matchesShortcutBinding(event, binding)).toBe(true);
+          }
         }
       }
     }
