@@ -72,6 +72,7 @@ import {
   injectPrintDefaults,
   injectSandboxShim,
   resolveBridgeScriptUrl,
+  type SandboxShimOffer,
 } from "./srcdoc";
 import { newLinkKey, withLinkKey } from "./linkGuard";
 
@@ -100,6 +101,27 @@ function isBridgeReadyMessage(value: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/** A store's page items as a new document starts with them; none when it cannot be read, so the page still loads. */
+function readFrameStorage(store: HtmlFrameStorage): HtmlFrameStorageSeed {
+  try {
+    const seed = store.read();
+    return { local: [...seed.local], session: [...seed.session] };
+  } catch {
+    return { local: [], session: [] };
+  }
+}
+
+/** The change a frame's `storage` message names, or null when it is not one. */
+function frameStorageWriteFrom(data: Record<string, unknown>): HtmlFrameStorageWrite | null {
+  const { area, op, key, value } = data;
+  if (area !== "local" && area !== "session") return null;
+  if (op === "clear") return { area, op };
+  if (typeof key !== "string") return null;
+  if (op === "remove") return { area, op, key };
+  if (op === "set" && typeof value === "string") return { area, op, key, value };
+  return null;
 }
 
 function parseVimSelectionHudContext(
@@ -547,6 +569,44 @@ export interface HtmlViewerProps {
    * the host's policy. Ignored in live (`src`) mode. Absent → srcdoc, unchanged.
    */
   frameUrl?: (document: string) => Promise<string | null>;
+  /**
+   * Opt-in: where the page's `localStorage` and `sessionStorage` are kept
+   * beyond one load of it. The frame has no storage of its own (an opaque
+   * origin: the sandbox shim gives each load an in-memory one), so a page
+   * that remembers a choice (a theme) forgot it on every load. With a store,
+   * each new document starts from what `read()` returns and every change the
+   * page makes is handed to `write()`. Read when a document is built, never a
+   * reason to build one. Ignored in live (`src`) mode and on the
+   * `bridgeScriptUrl` path. Absent → nothing kept between loads, unchanged.
+   */
+  frameStorage?: HtmlFrameStorage;
+}
+
+/** The page items `HtmlViewerProps.frameStorage` keeps: each storage as `[key, value]` pairs. */
+export interface HtmlFrameStorageSeed {
+  local: Array<[string, string]>;
+  session: Array<[string, string]>;
+}
+
+/** One change a page made to its `localStorage` (`local`) or `sessionStorage` (`session`). */
+export type HtmlFrameStorageWrite =
+  | { area: "local" | "session"; op: "set"; key: string; value: string }
+  | { area: "local" | "session"; op: "remove"; key: string }
+  | { area: "local" | "session"; op: "clear" };
+
+/** A store for the page items of `HtmlViewerProps.frameStorage`. */
+export interface HtmlFrameStorage {
+  read(): HtmlFrameStorageSeed;
+  write(change: HtmlFrameStorageWrite): void;
+  /** The most all the page items may hold together, in UTF-16 code units, each counted as its key, its value and `perItem`. */
+  limit: number;
+  /** What one item costs besides its key and value (the store's own name for it, its keeping). */
+  perItem: number;
+}
+
+/** A store's limit or per-item cost as the shim reads it: a finite number of units, never below 0. */
+function storageUnits(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, value) : value > 0 ? Number.MAX_SAFE_INTEGER : 0;
 }
 
 /** What a host's served frame document says when it is no longer kept (`frameUrl`). */
@@ -669,10 +729,15 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       frameUrl,
       pageNavigation = false,
       frameStart,
+      frameStorage,
     },
     ref,
   ) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    // Read when a document is built and when the frame posts a change: a new
+    // store is never a reason to reload the page.
+    const frameStorageRef = useRef(frameStorage);
+    frameStorageRef.current = frameStorage;
     const globalCommentButtonRef = useRef<HTMLButtonElement>(null);
     const [iframeHeight, setIframeHeight] = useState(600);
     // Increment on every bridge-ready event so srcdoc navigations re-send
@@ -770,8 +835,13 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       const page = injectIntoHead(injectPrintDefaults(rawHtml, { sectionBreaks: hostTheme }), injection);
       // Inline path: history and storage are safe before the page's own head
       // scripts run, and the link guard runs before every script (the shim
-      // too). The URL path gets both from the bridge asset.
-      const framed = bridgeUrl ? page : injectLinkGuard(injectSandboxShim(page), linkKey);
+      // too). The URL path gets both from the bridge asset. The shim is
+      // offered the page items kept so far, when the host keeps them.
+      const store = bridgeUrl ? undefined : frameStorageRef.current;
+      const offer: SandboxShimOffer | undefined = store
+        ? { storage: { ...readFrameStorage(store), limit: storageUnits(store.limit), perItem: storageUnits(store.perItem) } }
+        : undefined;
+      const framed = bridgeUrl ? page : injectLinkGuard(injectSandboxShim(page, offer), linkKey);
       // A page its server opened outside the session's roots gets no network.
       const html = hasNoNetworkMarker(rawHtml) ? injectNoNetworkCsp(framed) : framed;
       return { html, linkKey };
@@ -1186,6 +1256,21 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
         }
         if (isRecord(e.data) && e.data.type === `${PREFIX}tools-toggle`) {
           onToolsToggleRef.current?.();
+          return;
+        }
+        // A change the page made to its storage, for the host's store. Only
+        // from this frame (checked above), never in live mode or on the
+        // bridgeScriptUrl path (no store is offered there).
+        if (isRecord(e.data) && e.data.type === `${PREFIX}storage`) {
+          const store = frameStorageRef.current;
+          const change = live || bridgeUrlRef.current ? null : frameStorageWriteFrom(e.data);
+          if (store && change) {
+            try {
+              store.write(change);
+            } catch {
+              // A store that refuses keeps nothing; the page keeps its own load's copy.
+            }
+          }
           return;
         }
         if (isRecord(e.data) && e.data.type === `${PREFIX}step`) {

@@ -13,7 +13,7 @@ import { describe, expect, test } from "bun:test";
 import vm from "node:vm";
 import { BRIDGE_SCRIPT } from "./bridge-script";
 import { SANDBOX_SHIM_SCRIPT } from "./sandboxShim";
-import { injectSandboxShim } from "./srcdoc";
+import { injectSandboxShim, type SandboxShimOffer } from "./srcdoc";
 
 const ASSET_BASE = "http://localhost:4000/api/html-assets/tok/";
 
@@ -131,6 +131,113 @@ describe("a page that uses history and storage as it builds itself", () => {
   });
 });
 
+/**
+ * A srcdoc frame whose host made an OFFER: the scripts `injectSandboxShim` writes (the offer, then the shim) run
+ * in it as a page load runs them; what it posts to the parent, the steps it hands the link guard (which takes one
+ * only while a person's click is being dispatched: `clicking`), the natives a page's history calls reached, and
+ * the console's warnings are recorded.
+ */
+function hostedFrame(offer?: SandboxShimOffer, before = "") {
+  const posted: Array<Record<string, unknown>> = [];
+  const followed: Array<[string, unknown]> = [];
+  const natives: string[] = [];
+  const warnings: string[] = [];
+  const person = { clicking: false };
+  const frame = opaqueFrame("about:srcdoc", {
+    parent: { postMessage: (message: Record<string, unknown>) => posted.push(JSON.parse(JSON.stringify(message))) },
+    console: { warn: (message: string) => warnings.push(message) },
+    __plannotatorLinkGuard: Object.freeze({
+      follow: (kind: string, msg: { delta?: unknown }) => {
+        followed.push([kind, msg?.delta]);
+        return person.clicking;
+      },
+    }),
+    __native: (name: string, delta?: unknown) => natives.push(delta === undefined ? name : `${name}(${String(delta)})`),
+  });
+  frame.run("history.back = function() { __native('back'); }; history.forward = function() { __native('forward'); }; history.go = function(n) { __native('go', n); };");
+  if (before) frame.run(before);
+  const html = injectSandboxShim("<!doctype html><head><script>PAGE()</script></head>", offer);
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+  // The offer and the shim; the page's own script is the test's to run.
+  for (const script of scripts.slice(0, -1)) frame.run(script);
+  return { frame, posted, followed, natives, warnings, html, person, offerScript: scripts.length > 2 ? scripts[0]! : null };
+}
+
+const STORAGE = (local: Array<[string, string]>, session: Array<[string, string]> = [], limit = 1000, perItem = 0) => ({ storage: { local, session, limit, perItem } });
+
+describe("a host that keeps the page's storage (frameStorage)", () => {
+  // md2web reads its theme in a head script; with nothing kept between loads it found none on every page.
+  test("the page's first head script reads what the host kept, and never sees the offer", () => {
+    const { frame } = hostedFrame(STORAGE([["md2web.theme", "dark"]], [["tab", "states"]]));
+    expect(frame.run("localStorage.getItem('md2web.theme') + ' ' + sessionStorage.tab + ' ' + localStorage.length")).toBe("dark states 1");
+    expect(frame.run("typeof window.__plannotatorFrameHost")).toBe("undefined");
+  });
+
+  test("each change is posted once, as the area, the operation, the key and the value", () => {
+    const { frame, posted } = hostedFrame(STORAGE([["kept", "1"]]));
+    frame.run("localStorage.setItem('theme', 'dark'); localStorage.setItem('theme', 'dark');");
+    frame.run("sessionStorage.step = 2; delete sessionStorage.step;");
+    frame.run("localStorage.removeItem('theme'); localStorage.clear();");
+    expect(posted).toEqual([
+      { type: "plannotator-bridge-storage", area: "local", op: "set", key: "theme", value: "dark" },
+      { type: "plannotator-bridge-storage", area: "session", op: "set", key: "step", value: "2" },
+      { type: "plannotator-bridge-storage", area: "session", op: "remove", key: "step" },
+      { type: "plannotator-bridge-storage", area: "local", op: "remove", key: "theme" },
+      { type: "plannotator-bridge-storage", area: "local", op: "clear" },
+    ]);
+  });
+
+  // A page that reloads itself starts from the storage its document was built with, which can be older than the
+  // store: a remove or a clear of what that load does not hold must still reach the store, or the deleted value
+  // comes back on every later page.
+  test("a remove or clear of what this load does not hold still reaches the store", () => {
+    const { frame, posted } = hostedFrame(STORAGE([]));
+    frame.run("localStorage.removeItem('theme'); sessionStorage.clear();");
+    expect(posted).toEqual([
+      { type: "plannotator-bridge-storage", area: "local", op: "remove", key: "theme" },
+      { type: "plannotator-bridge-storage", area: "session", op: "clear" },
+    ]);
+  });
+
+  test("the bridge's second run neither seeds again nor posts twice, even handed an offer again", () => {
+    const { frame, posted, offerScript } = hostedFrame(STORAGE([["theme", "light"]]));
+    frame.run("localStorage.setItem('theme', 'dark')");
+    frame.run(offerScript!);
+    frame.run(SANDBOX_SHIM_SCRIPT);
+    frame.run("localStorage.setItem('seen', '1')");
+    expect(frame.run("localStorage.getItem('theme')")).toBe("dark");
+    expect(posted.map((m) => m.key)).toEqual(["theme", "seen"]);
+  });
+
+  test("with no offer nothing is posted and nothing is kept, as before", () => {
+    const { frame, posted, html, followed } = hostedFrame(undefined);
+    frame.run("localStorage.setItem('theme', 'dark'); localStorage.removeItem('x'); history.back(); history.go(-2);");
+    expect(posted).toEqual([]);
+    expect(followed).toEqual([]);
+    expect(html).not.toContain("__plannotatorFrameHost =");
+    expect(html).toBe(`<!doctype html><head>${SHIM_TAG}<script>PAGE()</script></head>`);
+  });
+
+  // The host's store holds every page's items in the review tab's own sessionStorage, which it shares with the app.
+  test("a change past the limit, each item counted with its cost besides key and value, stays with this load", () => {
+    const { frame, posted, warnings } = hostedFrame(STORAGE([["a", "12345"]], [], 40, 10));
+    frame.run("localStorage.setItem('big', 'x'.repeat(40)); localStorage.setItem('big2', 'y'.repeat(40));");
+    frame.run("sessionStorage.setItem('b', '123'); sessionStorage.setItem('c', '4');");
+    expect(frame.run("localStorage.getItem('big').length")).toBe(40);
+    // a: 1 + 5 + 10 = 16; b: 1 + 3 + 10 = 14 (30); c would be 1 + 1 + 10 = 12 (42, past 40).
+    expect(posted).toEqual([{ type: "plannotator-bridge-storage", area: "session", op: "set", key: "b", value: "123" }]);
+    expect(warnings.length).toBe(1);
+  });
+
+  // A tab's Storage keeps its own methods whatever its items are named; kept from page to page, an item named
+  // toString would otherwise break every later page's storage.
+  test("an item named as one of Storage's methods leaves the method in place", () => {
+    const { frame } = hostedFrame(STORAGE([["toString", "x"], ["hasOwnProperty", "y"]]));
+    expect(frame.run("typeof localStorage.toString + ' ' + typeof localStorage.hasOwnProperty")).toBe("function function");
+    expect(frame.run("localStorage.getItem('toString') + localStorage.getItem('hasOwnProperty')")).toBe("xy");
+  });
+});
+
 const SHIM_TAG = `<script>${SANDBOX_SHIM_SCRIPT}</script>`;
 
 describe("where the shim runs", () => {
@@ -146,6 +253,22 @@ describe("where the shim runs", () => {
       .toBe(`<!doctype html>${SHIM_TAG}<title>About <head></title><script>boot()</script></head>`);
     expect(injectSandboxShim('<!doctype html><html data-n="<head>"><head data-x="a>b"><script>boot()</script></head>'))
       .toBe(`<!doctype html><html data-n="<head>"><head data-x="a>b">${SHIM_TAG}<script>boot()</script></head>`);
+  });
+
+  test("a host's offer right before it, so ahead of every page script too", () => {
+    const html = injectSandboxShim('<!doctype html><script>boot()</script><head></head>', STORAGE([["theme", "dark"]]));
+    expect(html).toBe(`<!doctype html><script>window.__plannotatorFrameHost = {"storage":{"local":[["theme","dark"]],"session":[],"limit":1000,"perItem":0}};</script>${SHIM_TAG}<script>boot()</script><head></head>`);
+  });
+
+  test("an offered value that would end the script, open a comment or end a line of it reads back as it was", () => {
+    const value = "</script><script>alert(1)</script><!-- \u2028 \u2029 '\" \\";
+    const html = injectSandboxShim("<head></head>", STORAGE([[value, value]]));
+    const offerScript = html.slice(0, html.indexOf(SHIM_TAG));
+    expect(offerScript.match(/<\/script>/g)?.length).toBe(1);
+    expect(offerScript).not.toContain("<!--");
+    expect(offerScript).not.toContain("\u2028");
+    const { frame } = hostedFrame(STORAGE([[value, value]]));
+    expect(frame.run(`localStorage.getItem(${JSON.stringify(value)})`)).toBe(value);
   });
 
   test("ahead of a script that comes before <head>, and never inside one", () => {
