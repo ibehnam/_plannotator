@@ -642,9 +642,13 @@ ${SANDBOX_SHIM_SCRIPT}
   // navigation reach the page untouched. Text drag-selection commenting stays
   // LIVE in both modes (a real drag opens the comment toolbar even in
   // Interact), committed overlay artifacts stay visible in both modes, and
-  // marker buttons keep their own clicks. BOTH surface kinds start ARMED —
-  // Esc (or the header pen) drops to Interact.
+  // marker buttons keep their own clicks. Armed until the host's first
+  // set-annotate-mode says otherwise (the annotate app opens pages in Interact).
   var annotateModeActive = true;
+  // Whether the host has an overlay open over this page (the comment composer,
+  // the markup toolbar, a quick-label picker, the global comment): Escape then
+  // closes it wherever focus is, as it does in the host's own document.
+  var hostOverlayOpen = false;
   // A native host decides link navigations itself (HtmlViewer hostNavigates).
   var hostNavigates = false;
   // Forms and in-page links work as in a tab (the host's opt-in, \`pageNavigation\`).
@@ -1119,6 +1123,14 @@ ${SANDBOX_SHIM_SCRIPT}
 
     else if (type === PREFIX + 'set-page-reports') {
       setPageReports(e.data);
+    }
+
+    else if (type === PREFIX + 'set-host-overlay') {
+      hostOverlayOpen = e.data.open === true;
+    }
+
+    else if (type === PREFIX + 'release-focus') {
+      relinquishFocus();
     }
 
     else if (type === PREFIX + 'set-annotate-mode') {
@@ -5079,6 +5091,19 @@ ${SANDBOX_SHIM_SCRIPT}
     annotateElement(el, undefined, true, { x: e.clientX, y: e.clientY });
   }, true);
 
+  // An overlay the host has open over the page takes Escape first, wherever
+  // focus is, ahead of Vim's ladder and the page's own handlers: Escape closes
+  // the comment composer in the host's document, and with focus left in the
+  // page (a click back into it, or a focus handoff the frame kept) it closes it
+  // from here too. The host closes it and cancels the selection, which clears
+  // this side's pending state.
+  window.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape' || !hostOverlayOpen || e.isComposing) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    postToParent({ type: PREFIX + 'overlay-escape' });
+  }, true);
+
   // Escape ladder (outside vim, which has its own): a pending draft closes
   // first, then the hover outline clears, then Esc EXITS Annotate back to
   // Interact — the parent owns the mode, so the final rung only posts
@@ -6403,13 +6428,19 @@ ${SANDBOX_SHIM_SCRIPT}
     if (!e.key || e.key.length !== 1) return; // single printable char only
     e.preventDefault();
     postToParent({ type: PREFIX + 'keytype', key: e.key });
-    // Hand keyboard focus back to the parent window so the comment textarea can
-    // take it. Blurring the <iframe> from the parent isn't enough — the inner
-    // document keeps focus — so the iframe must relinquish it. parent.focus() is
-    // allowed cross-origin (like postMessage); also drop the active element.
+    relinquishFocus();
+  });
+
+  // Hand keyboard focus back to the parent window, so a host field (the comment
+  // composer's textarea) can take it: on a typed key above, and whenever the host
+  // opens its composer from a selection made here (release-focus). Blurring the
+  // <iframe> from the parent isn't enough — the inner document keeps focus — so
+  // the iframe must relinquish it. parent.focus() is allowed cross-origin (like
+  // postMessage); also drop the active element.
+  function relinquishFocus() {
     try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (ex) {}
     try { EDITOR.focus(); } catch (ex) {}
-  });
+  }
 
   // --- Helpers ---
 
