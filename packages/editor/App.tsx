@@ -8567,19 +8567,18 @@ const App: React.FC = () => {
               ? 'Annotation session closed without feedback.'
               : archive.archiveMode
                 ? 'You can reopen with plannotator archive.'
+                // What happened, naming no agent: Plannotator is not one
+                // agent's tool, nor only agents'.
                 : goalSetupMode
-                  ? `${agentName} will use your answers to continue.`
+                  ? 'Your answers were sent back.'
                 : submitted === 'approved'
-                  ? (annotateMode
-                      ? `${agentName} will proceed.`
-                      : `${agentName} will proceed with the implementation.`)
+                  ? (annotateMode ? 'Your approval was sent back.' : 'Your approval of the plan was sent back.')
                   : submitted === 'done'
-                    ? `Nothing was sent to ${agentName}.`
+                    ? 'Nothing was sent.'
                   : annotateMode
-                    ? `${agentName} will address your feedback on the ${annotateSource === 'message' ? 'message' : annotateSource === 'folder' ? 'files' : 'file'}.`
-                    : `${agentName} will revise the plan based on your feedback.`
+                    ? `Your feedback on the ${annotateSource === 'message' ? 'message' : annotateSource === 'folder' ? 'files' : 'file'} was sent back.`
+                    : 'Your feedback on the plan was sent back.'
           }
-          agentLabel={agentName}
           footer={starAskFooter}
         />
 

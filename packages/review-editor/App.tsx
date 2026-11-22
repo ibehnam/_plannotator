@@ -9,7 +9,7 @@ import '@plannotator/ui/utils/math-eager';
 import '@plannotator/ui/utils/identity-tater';
 import { primeImageSizes, type ImageSizes } from './components/image-diff/imageSizes';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { type Origin, getAgentName } from '@plannotator/shared/agents';
+import { type Origin } from '@plannotator/shared/agents';
 import { ThemeProvider, useTheme } from '@plannotator/ui/components/ThemeProvider';
 import { TooltipProvider } from '@plannotator/ui/components/Tooltip';
 import { ConfirmDialog } from '@plannotator/ui/components/ConfirmDialog';
@@ -6748,10 +6748,9 @@ const ReviewApp: React.FC = () => {
                   ? `Your approval was submitted to ${platformLabel}.`
                   : `Your feedback was submitted to ${platformLabel}.`
                 : submitted === 'approved'
-                  ? `${getAgentName(origin)} will proceed with the changes.`
-                  : `${getAgentName(origin)} will address your review feedback.`
+                  ? 'Your approval of the changes was sent back.'
+                  : 'Your review feedback was sent back.'
           }
-          agentLabel={getAgentName(origin)}
           footer={starAskFooter}
           links={platformMode && submitted !== 'exited'
             ? platformPostedUrls.map((href) => ({
