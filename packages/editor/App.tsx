@@ -278,6 +278,7 @@ import { useLiveAnnotateVersion, type LiveAnnotateVersion } from './hooks/useLiv
 import { useHtmlRefresh, type HtmlRefreshedDocument } from './hooks/useHtmlRefresh';
 import { useAnnotationJump } from './hooks/useAnnotationJump';
 import { useDocumentHistory, type DocumentHistory } from './hooks/useDocumentHistory';
+import type { HistorySteps } from '@plannotator/ui/components/HistorySteps';
 import { createFrameStorage } from './frameStorage';
 import { planRevisionBlocker, usePlanRevisions, type PlanRevisionSnapshot } from './hooks/usePlanRevisions';
 import { AgentNudgeBanner } from './components/AgentNudgeBanner';
@@ -2407,9 +2408,10 @@ const App: React.FC = () => {
   }, [allAnnotationCounts, isCompactFilesSurfaceOpen, isCompactTouchLayout, openSidebarTab, sidebar]);
 
   // Context-aware back label for linked doc navigation
+  // The root by its own name: the reviewed file's (`index.html`), never "file".
   const backLabel = bundleBackPath ? annotateBundleBaseName(bundleBackPath)
     : annotateSource === 'folder' ? 'file list'
-    : annotateSource === 'file' ? 'file'
+    : annotateSource === 'file' ? (sourceFilePath ? basenameFromPath(sourceFilePath) : 'file')
     : annotateSource === 'message' ? 'message'
     : 'plan';
 
@@ -5502,8 +5504,22 @@ const App: React.FC = () => {
     opensFromAddress: (path) => isAnnotatableDocPath(path, getExtraMarkdownExtensions()),
   });
   documentHistoryRef.current = documentHistory;
+  // Back and Forward beside each jump to the root, named after their pages
+  // (the root by its own name). Absent where the history is off.
+  const historyStepName = (doc: string | null) => (doc === null ? backLabel : basenameFromPath(doc));
+  const historySteps: HistorySteps | undefined = documentHistoryEnabled
+    ? {
+        back: documentHistory.canGoBack ? { name: historyStepName(documentHistory.backDoc), go: documentHistory.back } : null,
+        forward: documentHistory.canGoForward ? { name: historyStepName(documentHistory.forwardDoc), go: documentHistory.forward } : null,
+      }
+    : undefined;
   // The review's pages keep their storage in this tab for the review (frameStorage.ts).
   const frameStorage = useMemo(() => createFrameStorage(), []);
+  // A step taken from the compact navigator closes it, as its jump to the root does.
+  const closingCompactNavigator = (steps: HistorySteps): HistorySteps => ({
+    back: steps.back && { ...steps.back, go: () => { steps.back!.go(); closeCompactNavigator(); } },
+    forward: steps.forward && { ...steps.forward, go: () => { steps.forward!.go(); closeCompactNavigator(); } },
+  });
 
   const jumpToAnnotation = useAnnotationJump({
     currentPath: currentDocumentPath,
@@ -7077,10 +7093,26 @@ const App: React.FC = () => {
         // The header Back control is desktop-only too, and an HTML linked
         // document opens with the sidebar untouched, so the compact shell
         // would otherwise have no way out of one.
+        ...(htmlLinkedDocBackTarget && historySteps?.back
+          ? [{
+              id: 'history-back' as const,
+              label: `Back to ${historySteps.back.name}`,
+              subtitle: 'The page before this one',
+              onSelect: historySteps.back.go,
+            }]
+          : []),
+        ...(htmlLinkedDocBackTarget && historySteps?.forward
+          ? [{
+              id: 'history-forward' as const,
+              label: `Forward to ${historySteps.forward.name}`,
+              subtitle: 'The page after this one',
+              onSelect: historySteps.forward.go,
+            }]
+          : []),
         ...(htmlLinkedDocBackTarget
           ? [{
               id: 'linked-doc-back' as const,
-              label: htmlLinkedDocBackTarget,
+              label: historySteps ? `Go to ${backLabel}` : htmlLinkedDocBackTarget,
               subtitle: 'Leave this document for the one the session opened from',
               onSelect: handleLinkedDocBack,
             }]
@@ -7415,6 +7447,7 @@ const App: React.FC = () => {
             }
           : undefined}
         backLabel={backLabel}
+        historySteps={compact && historySteps ? closingCompactNavigator(historySteps) : historySteps}
         showFilesTab={showFilesTab && !archive.archiveMode}
         fileAnnotationCounts={fileAnnotationCounts}
         highlightedFiles={highlightedFiles}
@@ -7596,7 +7629,9 @@ const App: React.FC = () => {
           isRefreshingHtml={htmlRefresh.isRefreshing}
           onRefreshHtml={htmlRefresh.refresh}
           onHtmlLinkedDocBack={htmlLinkedDocBackTarget ? handleLinkedDocBack : undefined}
-          htmlLinkedDocBackDescription={htmlLinkedDocBackTarget ?? undefined}
+          htmlLinkedDocBackDescription={htmlLinkedDocBackTarget && historySteps ? `Go to ${backLabel}` : htmlLinkedDocBackTarget ?? undefined}
+          htmlHistorySteps={htmlLinkedDocBackTarget ? historySteps : undefined}
+          htmlRootName={backLabel}
           compactTouchLayout={isCompactTouchLayout}
           compactNavigatorAvailable={compactNavigatorAvailable}
           compactNavigatorOpen={isCompactNavigatorOpen}
@@ -8193,6 +8228,7 @@ const App: React.FC = () => {
                                 : fileBrowser.activeFile ? 'File' : undefined,
                             backLabel,
                             variant: annotateSource === 'folder' ? 'folder-file' : 'breadcrumb',
+                            steps: historySteps,
                           }
                         : null
                     }

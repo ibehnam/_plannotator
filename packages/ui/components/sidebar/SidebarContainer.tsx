@@ -11,6 +11,7 @@ import type { Block, Annotation } from "../../types";
 import type { VersionInfo, VersionEntry } from "../../hooks/usePlanDiff";
 import type { UseFileBrowserReturn } from "../../hooks/useFileBrowser";
 import { TableOfContents } from "../TableOfContents";
+import type { HistorySteps } from "../HistorySteps";
 import { VersionBrowser } from "./VersionBrowser";
 import { FileBrowser, type FileEditStatus } from "./FileBrowser";
 import { ArchiveBrowser, type ArchivedPlan } from "./ArchiveBrowser";
@@ -40,6 +41,8 @@ interface SidebarContainerProps {
   linkedDocFilepath?: string | null;
   onLinkedDocBack?: () => void;
   backLabel?: string;
+  /** Back and Forward through the host's history of documents (TableOfContents). */
+  historySteps?: HistorySteps | null;
   // File Browser props
   showFilesTab?: boolean;
   fileAnnotationCounts?: Map<string, number>;
@@ -97,6 +100,7 @@ export const SidebarContainer: React.FC<SidebarContainerProps> = ({
   linkedDocFilepath,
   onLinkedDocBack,
   backLabel,
+  historySteps,
   showFilesTab,
   fileAnnotationCounts,
   highlightedFiles,
@@ -341,6 +345,7 @@ export const SidebarContainer: React.FC<SidebarContainerProps> = ({
             linkedDocFilepath={linkedDocFilepath}
             onLinkedDocBack={onLinkedDocBack}
             backLabel={backLabel}
+            historySteps={historySteps}
           />
         )}
         {activeTab === "versions" && (

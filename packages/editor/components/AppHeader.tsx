@@ -9,6 +9,7 @@ import { QuestionProgressChip } from '@plannotator/ui/components/QuestionProgres
 import type { DecisionActionId, DecisionSpec } from '@plannotator/ui/utils/decisionSpec';
 import { Settings } from '@plannotator/ui/components/Settings';
 import { PlanHeaderMenu } from '@plannotator/ui/components/PlanHeaderMenu';
+import type { HistorySteps } from '@plannotator/ui/components/HistorySteps';
 import type { CallbackConfig } from '@plannotator/ui/utils/callback';
 import type { UIPreferences } from '@plannotator/ui/utils/uiPreferences';
 import type { PermissionMode } from '@plannotator/ui/utils/permissionMode';
@@ -50,6 +51,10 @@ interface AppHeaderProps {
   onHtmlLinkedDocBack?: () => void;
   /** "Back to <root file name>" for the control's tooltip and accessible name. */
   htmlLinkedDocBackDescription?: string;
+  /** Back and Forward through the tab's history, beside the jump to the root (HtmlSurfaceControls). */
+  htmlHistorySteps?: HistorySteps;
+  /** The root's own name, which that jump then shows. */
+  htmlRootName?: string;
   /** Compact touch layouts replace the brand mark with a task-focused entry
    * into the full-stage document navigator. Desktop never receives it. */
   compactTouchLayout?: boolean;
@@ -192,6 +197,8 @@ export const AppHeader = React.memo<AppHeaderProps>(({
   onRefreshHtml,
   onHtmlLinkedDocBack,
   htmlLinkedDocBackDescription,
+  htmlHistorySteps,
+  htmlRootName,
   compactTouchLayout = false,
   compactNavigatorAvailable = false,
   compactNavigatorOpen = false,
@@ -435,6 +442,8 @@ export const AppHeader = React.memo<AppHeaderProps>(({
             isRefreshing={!!isRefreshingHtml}
             onBack={onHtmlLinkedDocBack}
             backDescription={htmlLinkedDocBackDescription}
+            historySteps={htmlHistorySteps}
+            rootName={htmlRootName}
             labels={PLANNOTATOR_HTML_REFRESH_LABELS}
           />
         )}

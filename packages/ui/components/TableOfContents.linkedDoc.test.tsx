@@ -86,4 +86,37 @@ describe.if(hasDom)('TableOfContents linked-document header', () => {
     const host = await mount({ blocks: [HEADING] });
     expect(host.textContent).toContain('Chapter');
   });
+
+  test('with the review\'s history: Back and Forward under "Viewing", named after their pages, and the root by its name', async () => {
+    const steps: string[] = [];
+    const host = await mount({
+      linkedDocFilepath: '/site/third.md',
+      onLinkedDocBack: () => steps.push('root'),
+      backLabel: 'index.md',
+      historySteps: { back: { name: 'second.md', go: () => steps.push('back') }, forward: { name: 'fourth.md', go: () => steps.push('forward') } },
+    });
+    const back = host.querySelector<HTMLButtonElement>('[data-history-back]')!;
+    const forward = host.querySelector<HTMLButtonElement>('[data-history-forward]')!;
+    const root = host.querySelector<HTMLButtonElement>('[data-root-jump]')!;
+    expect(back.getAttribute('aria-label')).toBe('Back to second.md');
+    expect(forward.getAttribute('title')).toBe('Forward to fourth.md');
+    expect(root.textContent).toBe('index.md');
+    expect(host.textContent).not.toContain('Back to index.md');
+    await act(async () => { back.click(); forward.click(); root.click(); });
+    expect(steps).toEqual(['back', 'forward', 'root']);
+  });
+
+  test('a step that leads nowhere is absent; with no history the header is as before', async () => {
+    const first = await mount({
+      linkedDocFilepath: '/site/second.md',
+      onLinkedDocBack: () => {},
+      backLabel: 'index.md',
+      historySteps: { back: { name: 'index.md', go: () => {} }, forward: null },
+    });
+    expect(first.querySelector('[data-history-forward]')).toBeNull();
+    expect(first.querySelector('[data-history-back]')).not.toBeNull();
+    const plain = await mount({ linkedDocFilepath: '/site/second.md', onLinkedDocBack: () => {}, backLabel: 'index.md' });
+    expect(plain.querySelector('[data-history-back], [data-history-forward], [data-root-jump]')).toBeNull();
+    expect(plain.textContent).toContain('Back to index.md');
+  });
 });

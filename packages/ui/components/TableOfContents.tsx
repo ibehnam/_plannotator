@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { basenameFromPath } from '@plannotator/core/source-save';
+import { HistoryStepButtons, RootJumpIcon, type HistorySteps } from './HistorySteps';
 import type { Block, Annotation } from '../types';
 import {
   buildTocHierarchy,
@@ -23,6 +24,10 @@ interface TableOfContentsProps {
   linkedDocFilepath?: string | null;
   onLinkedDocBack?: () => void;
   backLabel?: string;
+  /** A host that keeps its documents in the tab's history: Back and Forward,
+   *  each named after its page, under "Viewing"; the jump to the root then
+   *  reads as the root's name. Absent → today's header. */
+  historySteps?: HistorySteps | null;
   /**
    * The element a click scrolls. Default: the `ScrollViewportProvider`
    * context's viewport (plan review). A host that draws the list outside the
@@ -74,6 +79,7 @@ export function TableOfContents({
   linkedDocFilepath,
   onLinkedDocBack,
   backLabel,
+  historySteps,
   scrollViewport: scrollViewportProp,
   maxLevel = 3,
 }: TableOfContentsProps) {
@@ -134,7 +140,18 @@ export function TableOfContents({
           <div className="mb-2 px-0.5 pb-1.5 border-b border-border/50">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-primary/80">Viewing</span>
-              {onLinkedDocBack && (
+              {onLinkedDocBack && (historySteps !== undefined ? (
+                <button
+                  type="button"
+                  data-root-jump
+                  onClick={onLinkedDocBack}
+                  title={`Go to ${backLabel || 'plan'}`}
+                  className="flex min-w-0 items-center gap-0.5 text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
+                >
+                  <RootJumpIcon className="w-2.5 h-2.5 flex-shrink-0" />
+                  <span className="truncate">{backLabel || 'plan'}</span>
+                </button>
+              ) : (
                 <button
                   onClick={onLinkedDocBack}
                   className="flex items-center gap-0.5 text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
@@ -144,8 +161,16 @@ export function TableOfContents({
                   </svg>
                   Back to {backLabel || 'plan'}
                 </button>
-              )}
+              ))}
             </div>
+            {historySteps && (historySteps.back || historySteps.forward) && (
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <HistoryStepButtons
+                  steps={historySteps}
+                  buttonClass="flex min-w-0 items-center gap-0.5 text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
+                />
+              </div>
+            )}
             <p className="text-[11px] text-foreground/70 truncate mt-0.5" title={linkedDocFilepath}>
               {basenameFromPath(linkedDocFilepath)}
             </p>

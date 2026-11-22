@@ -41,7 +41,7 @@ interface PlanHeaderMenuProps {
 }
 
 export interface CompactPlanAction {
-  id: 'exit' | 'feedback' | 'approve' | 'copy' | 'done' | 'edit' | 'tools' | 'annotate' | 'refresh' | 'annotations' | 'ai' | 'review' | 'note' | 'discard-finish' | 'bundle-previous' | 'bundle-next';
+  id: 'exit' | 'feedback' | 'approve' | 'copy' | 'done' | 'edit' | 'tools' | 'annotate' | 'refresh' | 'annotations' | 'ai' | 'review' | 'note' | 'discard-finish' | 'bundle-previous' | 'bundle-next' | 'linked-doc-back' | 'history-back' | 'history-forward';
   label: string;
   subtitle?: string;
   onSelect: () => void;
