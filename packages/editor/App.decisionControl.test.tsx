@@ -264,6 +264,27 @@ async function pressNoteKey(key: string, init: KeyboardEventInit = {}): Promise<
   await settle();
 }
 
+/** A document whose one link opens `other.md` as a linked document. */
+const LINKING = "# Notes\n\nSee [the other document](other.md).\n";
+
+const mainText = () => document.querySelector("main")?.textContent ?? "";
+
+async function openLinkedDocument(): Promise<void> {
+  const link = Array.from(document.querySelectorAll<HTMLAnchorElement>("main a"))
+    .find((a) => a.textContent?.trim() === "the other document");
+  if (!link) throw new Error("the link to other.md is not shown");
+  await act(async () => link.click());
+  for (let attempt = 0; attempt < 20 && !mainText().includes("Body of other.md."); attempt += 1) await settle();
+  if (!mainText().includes("Body of other.md.")) throw new Error("other.md did not open");
+}
+
+async function pressModEnter(): Promise<void> {
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
+  });
+  await settle();
+}
+
 function globalComments(body: SubmittedBody) {
   return (body.annotations ?? []).filter((a) => a.type === "GLOBAL_COMMENT");
 }
@@ -325,6 +346,39 @@ describe.if(hasDom)("annotate decision control", () => {
     expect(submissions).toHaveLength(1);
     expect(submissions[0]!.endpoint).toBe("feedback");
     expect(submissions[0]!.feedback).toBe(ANNOTATE_NO_FEEDBACK_SENTENCE);
+  });
+
+  // Mod+Enter is the header's primary wherever the header shows one: annotate
+  // keeps Done in the header while a linked document is open, so Mod+Enter
+  // sends it there too; a plan review hides its decision while one is open, so
+  // Mod+Enter sends nothing, and sends the decision again once it is closed.
+  test("a linked document open: the header keeps Done and Mod+Enter sends it", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountAnnotate({ plan: LINKING });
+    await openLinkedDocument();
+
+    expect(primaryButton()).not.toBeNull();
+    await pressModEnter();
+
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]!.endpoint).toBe("feedback");
+  });
+
+  test("a linked document open over a plan review: no decision shows and Mod+Enter sends nothing", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mount({ plan: LINKING, origin: "codex", sharingEnabled: false, serverConfig: {} }, () => caretButton());
+    await openLinkedDocument();
+
+    expect(primaryButton()).toBeNull();
+    await pressModEnter();
+    expect(submissions).toHaveLength(0);
+
+    await act(async () => document.querySelector<HTMLButtonElement>("[data-root-jump]")!.click());
+    for (let attempt = 0; attempt < 20 && !primaryButton(); attempt += 1) await settle();
+    await pressModEnter();
+    expect(submissions.map((s) => s.endpoint)).toEqual(["approve"]);
   });
 
   test("Send a note… posts one GLOBAL_COMMENT without approval framing", async () => {

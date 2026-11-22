@@ -92,6 +92,9 @@ interface AppHeaderProps {
   aiHasMessages: boolean;
   annotationCount: number;
   linkedDocIsActive: boolean;
+  /** Whether the session's primary decision shows (App's `primaryAvailable`,
+   *  which Mod+Enter and the compact rows follow too). */
+  primaryAvailable: boolean;
   callbackShareUrlReady: boolean;
   canShareCurrentSession: boolean;
   /** `:::question` progress: the "N/M answered" chip beside the decision
@@ -225,6 +228,7 @@ export const AppHeader = React.memo<AppHeaderProps>(({
   aiHasMessages,
   annotationCount,
   linkedDocIsActive,
+  primaryAvailable,
   callbackShareUrlReady,
   canShareCurrentSession,
   questionProgress,
@@ -378,7 +382,7 @@ export const AppHeader = React.memo<AppHeaderProps>(({
           </>
         )}
 
-        {!compactTouchLayout && isApiMode && (!linkedDocIsActive || annotateMode) && !archiveMode && !goalSetupMode && (
+        {!compactTouchLayout && primaryAvailable && (
           <>
             {questionProgress && questionProgress.total > 0 && (
               <QuestionProgressChip

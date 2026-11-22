@@ -1672,6 +1672,12 @@ const App: React.FC = () => {
     setMarkdown, setAnnotations, setSelectedAnnotationId, setSubmitted,
   });
   const documentReadOnly = archive.archiveMode;
+  // Whether the header shows the session's primary decision (annotate's Done,
+  // plan review's Approve or Send Feedback). Mod+Enter and the compact rows
+  // follow it: annotate keeps its decision while a linked document is open,
+  // plan review hides its decision then.
+  const primaryAvailable = isApiMode && (!linkedDocHook.isActive || annotateMode)
+    && !archive.archiveMode && !goalSetupMode;
   useEffect(() => {
     annotationHistory.clear();
   }, [annotationHistory, archive.archiveMode]);
@@ -5068,9 +5074,9 @@ const App: React.FC = () => {
       // not the review session.
       if (isEditingMarkdown) return;
 
-      // Folder files are the active review target; normal linked docs are side
-      // references and should not submit the root plan.
-      if (linkedDocHook.isActive && annotateSource !== 'folder') return;
+      // Mod+Enter is the header's primary: it stands down wherever the header
+      // shows none, as goal setup's submit does while a linked document is open.
+      if (goalSetupMode ? linkedDocHook.isActive : !primaryAvailable) return;
 
       if (goalSetupMode) {
         if (document.querySelector('[data-comment-popover="true"]')) return;
@@ -5104,7 +5110,7 @@ const App: React.FC = () => {
     showPermissionModeSetup, pendingPasteImage,
     submitted, isSubmitting, isExiting, goalSetupAction.isSubmitting, isApiMode, documentReadOnly, isEditingMarkdown, linkedDocHook.isActive, annotations.length, codeAnnotations.length, externalAnnotations.length, annotateMode,
     hasFeedbackToSend, goalSetupMode, goalSetupAction.canSubmit, isAgentTerminalReady,
-    annotateSource, origin, getAgentWarning,
+    primaryAvailable, origin, getAgentWarning,
     maybeConfirmUnsavedSourceFileEdits,
   ]);
 
@@ -6923,7 +6929,7 @@ const App: React.FC = () => {
             disabled: compactActionBusy || !callbackShareUrlReady,
           },
         ]
-      : isApiMode && (!linkedDocHook.isActive || annotateMode) && !archive.archiveMode && !goalSetupMode
+      : primaryAvailable
         ? [
             ...(annotateMode
               ? [
@@ -7039,8 +7045,7 @@ const App: React.FC = () => {
               ? 'No feedback added. You can finish or keep reviewing.'
               : 'No feedback added. You can approve or keep reviewing.'
             : 'No feedback added. You can keep reviewing or close the session.';
-  const compactRowsFromDecisionSpec = isApiMode && (!linkedDocHook.isActive || annotateMode)
-    && !archive.archiveMode && !goalSetupMode && compactReviewActions.length > 0;
+  const compactRowsFromDecisionSpec = primaryAvailable && compactReviewActions.length > 0;
   const compactPrimaryReviewActionId: CompactPlanReviewAction['id'] | undefined =
     compactRowsFromDecisionSpec
       // The compact primary row IS the header primary (spec §3.1), in
@@ -7685,6 +7690,7 @@ const App: React.FC = () => {
           aiHasMessages={visibleAIMessages.length > 0}
           annotationCount={feedbackAnnotationCount}
           linkedDocIsActive={linkedDocHook.isActive}
+          primaryAvailable={primaryAvailable}
           callbackShareUrlReady={callbackShareUrlReady}
           canShareCurrentSession={canShareCurrentSession}
           questionProgress={headerQuestionProgress}
