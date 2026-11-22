@@ -43,6 +43,8 @@
     the page, Markup, Comment, Redline and Label with Shift+1 to 4, Delete and the label picker; a
     pinned element opens the composer in Markup.
 20. Those, described in the agent guides (its own commit, as 5).
+21. **Escape closes a visible composer with focus on the app's body** (HtmlViewer's composer rung),
+    as after a click back into an HTML page; described with 17 in the agent guides.
 
 `main` mirrors `upstream/main` and is never committed to.
 
