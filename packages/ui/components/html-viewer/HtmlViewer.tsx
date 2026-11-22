@@ -1639,8 +1639,8 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       );
       if (!readOnly && vimModeEnabled && iframe && iframe === document.activeElement) {
         // The initial parent focus can land before the sandbox bridge is ready.
-        // Reassert it after configuration so raw HTML enters BLOCK immediately,
-        // matching the Markdown surface instead of waiting for the first key.
+        // Reassert it after configuration so the page's Vim takes the first
+        // key; BLOCK starts on that key, as on the Markdown surface.
         postToBridge(
           { type: `${PREFIX}focus-vim` },
         );

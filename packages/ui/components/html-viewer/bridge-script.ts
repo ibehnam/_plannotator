@@ -1171,9 +1171,10 @@ ${SANDBOX_SHIM_SCRIPT}
     }
 
     else if (type === PREFIX + 'focus-vim') {
+      // Keys reach the page's Vim from now; BLOCK waits for the first one, as
+      // on the Markdown surface (no outline over a page nobody pressed a key in).
       if (vimEnabled) {
         ensureVimFocus();
-        if (vimPhase === 'inactive') resetVimSemanticNavigation();
         updateVimUi();
       }
     }
@@ -6205,7 +6206,12 @@ ${SANDBOX_SHIM_SCRIPT}
       }
 
       if (vimPhase === 'inactive') {
-        setVimPinpointTarget(initialVimPinpointTarget());
+        // BLOCK starts on the first Vim key, as on the Markdown surface (its
+        // shortcut registry hands it no other): a Tab or an arrow outlines nothing.
+        if (vimActionId) {
+          setVimPinpointTarget(initialVimPinpointTarget());
+          vimCommandContext = vimPhase;
+        }
       } else if (vimPhase === 'block' || vimPhase === 'inline') {
         var currentGraph = buildSemanticTargetGraph();
         if (!currentVimSemanticTarget(currentGraph)) {

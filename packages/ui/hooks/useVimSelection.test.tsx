@@ -139,7 +139,7 @@ describe.if(hasDom)('useVimSelection', () => {
   test('turning vim off after it was on still clears the document selection', () => {
     const { article, root } = mountHarness({ enabled: true, onRange: () => {} });
     act(() => article.focus());
-    expect(article.dataset.phase).toBe('block');
+    expect(article.dataset.phase).toBe('inactive');
 
     const range = document.createRange();
     range.selectNodeContents(article.querySelector('p') as HTMLElement);
@@ -381,15 +381,20 @@ describe.if(hasDom)('useVimSelection', () => {
     act(() => outside.focus());
     act(() => article.focus());
 
-    expect(article.dataset.targetKey).toBe('matrix:table');
+    // Focus outlines nothing and moves nothing; the first key starts from the
+    // block in view (the matrix), not the document's first (the intro).
+    expect(article.dataset.targetKey).toBe('');
     expect(viewport.scrollTop).toBe(320);
+    act(() => { keydown(article, 'j'); });
+    expect(article.dataset.targetKey).toBe('code:code');
 
     act(() => root.unmount());
     outside.remove();
     viewport.remove();
   });
 
-  test('starts with block focus, refines through inline to text, and preserves controls', () => {
+  // An outline nobody asked for sat over every document opened: focus starts no BLOCK, the first key does.
+  test('starts BLOCK on the first key, not on focus, refines through inline to text, and preserves controls', () => {
     const actions: Array<{ text: string; mode?: EditorMode }> = [];
     const { article, root, host } = mountHarness({
       enabled: true,
@@ -397,11 +402,11 @@ describe.if(hasDom)('useVimSelection', () => {
     });
 
     act(() => article.focus());
-    expect(article.dataset.phase).toBe('block');
-    expect(article.dataset.targetKey).toBe('intro:block');
+    expect(article.dataset.phase).toBe('inactive');
+    expect(article.dataset.targetKey).toBe('');
     const tab = keydown(article, 'Tab');
     expect(tab.defaultPrevented).toBe(false);
-    expect(article.dataset.targetKey).toBe('intro:block');
+    expect(article.dataset.phase).toBe('inactive');
     act(() => { keydown(article, 'l'); });
     expect(article.dataset.phase).toBe('inline');
     expect(article.dataset.targetKey).toBe('intro:inline:0');
@@ -438,7 +443,8 @@ describe.if(hasDom)('useVimSelection', () => {
     });
 
     act(() => article.focus());
-    expect(article.dataset.targetKey).toBe('intro:block');
+    expect(article.dataset.targetKey).toBe('');
+    // The first j starts BLOCK at the first block and moves on from it.
     act(() => { keydown(article, 'j'); });
     expect(article.dataset.targetKey).toBe('matrix:table');
     expect(article.dataset.hudKey).toBe('j');
