@@ -227,7 +227,12 @@ function docJson(data: Record<string, unknown>, options?: HandleDocOptions, sour
 
 /** The render decision is a pure function of resolved path plus `?convert=1`. */
 async function readDocument(path: string, convert: boolean, options: HandleDocOptions): Promise<Response> {
-	if (Bun.file(path).size > MAX_ANNOTATABLE_FILE_BYTES) {
+	// A raw HTML page opens whatever its size, as the reviewed one does
+	// (annotate-resolution.ts reads that whole): a page renders in the frame
+	// as it is, and a generated one (a long PDF's) passes 2MB. Every other
+	// kind, and HTML converted to markdown, keeps the cap.
+	const rendersRawHtml = /\.html?$/i.test(path) && !convert;
+	if (!rendersRawHtml && Bun.file(path).size > MAX_ANNOTATABLE_FILE_BYTES) {
 		return errorResponse(DOC_TOO_LARGE);
 	}
 	try {
