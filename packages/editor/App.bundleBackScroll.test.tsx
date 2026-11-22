@@ -275,8 +275,8 @@ async function scrollToMiddle(): Promise<{ id: string | null; top: number }> {
 }
 
 describe.if(hasDom)("annotate bundle Back keeps the reader's place", () => {
-  // The jump to the root names it (review-alpha.md), beside Back and Forward.
-  test("sidebar Back from a linked markdown document returns to the same block", async () => {
+  // A page open leaves the sidebar closed, so the way back is the breadcrumb's (a review of several files shows Close).
+  test("the breadcrumb's way back from a linked markdown document returns to the same block", async () => {
     await mount();
     const before = await scrollToMiddle();
 
@@ -284,8 +284,8 @@ describe.if(hasDom)("annotate bundle Back keeps the reader's place", () => {
     await waitFor(() => headingText().includes("Linked document"), "the linked document");
     expect(main().scrollTop).toBe(0); // the short document clamped the offset
 
-    const back = Array.from(document.querySelectorAll<HTMLButtonElement>("button[data-root-jump]"))
-      .find((b) => b.textContent === "review-alpha.md");
+    const back = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+      .find((b) => b.textContent?.trim() === "Close" && b.className.includes("text-[9px]"));
     expect(back).toBeDefined();
     await act(async () => { back!.click(); });
     await waitFor(showsAlpha, "review-alpha.md to come back");
