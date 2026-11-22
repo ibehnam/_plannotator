@@ -21,7 +21,12 @@
  *   page owns its DOM: during a real click its script can rewrite the link or
  *   wrap the clicked element in one, so it controls the address sent (never
  *   `javascript:`), and the host's own scheme and origin checks decide what
- *   that opens. It can never send anything without a person's click.
+ *   that opens. It can never send anything without a person's click. A host
+ *   that takes a page's own history calls (`HtmlViewer`'s `onPageHistory`)
+ *   gets them the same way (`kind: 'history'`, from the sandbox shim's
+ *   `history.back()`, `forward()` and `go(n)`): a step of at most 100 entries,
+ *   sent only while a person's click is being dispatched, so a page can move
+ *   the host's history only when the person pressed something in it.
  *
  * The host takes ONE offer per document it loaded itself, and only with that
  * load's key (`armLinkOffer` in useHtmlAnnotation): the key is new for every
@@ -41,6 +46,12 @@ export const LINK_OFFER_MESSAGE = "plannotator-bridge-link-offer";
 
 /** What the guard sends on that port for a person's click: `{ type, href }` (the raw href, at most 2048 chars). */
 export const LINK_CLICK_MESSAGE = "plannotator-bridge-link-click";
+
+/** What the guard sends on that port for a page's own history call during a person's click: `{ type, delta }`. */
+export const PAGE_HISTORY_MESSAGE = "plannotator-bridge-page-history";
+
+/** The farthest one such step may move the host's history, either way. */
+export const MAX_PAGE_HISTORY_DELTA = 100;
 
 /** The query parameter that carries a served frame's key (removed by the guard). */
 export const LINK_KEY_PARAM = "__pnk";
@@ -142,6 +153,15 @@ export const LINK_GUARD_FUNCTION = `(function(inlineKey) {
     return nodeTypeOf(target) === 1 ? target : parentOf(target);
   }
   function follow(kind, msg) {
+    if (kind === 'history') {
+      // A step of the host's history: a whole number of entries, never 0, at most ${MAX_PAGE_HISTORY_DELTA} either way.
+      var delta = msg ? msg.delta : undefined;
+      if (typeof delta !== 'number' || delta % 1 !== 0 || delta === 0) return false;
+      if (delta > ${MAX_PAGE_HISTORY_DELTA} || delta < -${MAX_PAGE_HISTORY_DELTA}) return false;
+      if (!clickedElement()) return false;
+      try { portPost(port, { type: '${PAGE_HISTORY_MESSAGE}', delta: delta }); } catch (ex) { return false; }
+      return true;
+    }
     var href = msg && typeof msg.href === 'string' ? String(msg.href) : '';
     if (!href || href.length > 2048) return false;
     var el = clickedElement();

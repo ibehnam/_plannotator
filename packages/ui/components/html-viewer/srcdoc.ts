@@ -378,10 +378,12 @@ export function injectNoNetworkCsp(html: string): string {
  * page script runs (`sandboxShim.ts`). `storage`: the items the page's
  * `localStorage` and `sessionStorage` start with, as `[key, value]` pairs, and
  * the most all of them may hold together, each counted as its key, its value
- * and `perItem`.
+ * and `perItem`. `history`: the page's own Back, Forward and `go(n)` are
+ * handed to the link guard, which sends them only during a person's click.
  */
 export interface SandboxShimOffer {
   storage?: { local: Array<[string, string]>; session: Array<[string, string]>; limit: number; perItem: number };
+  history?: boolean;
 }
 
 /** The script handing OFFER to the shim: its JSON with `<`, U+2028 and U+2029 escaped, so no value ends the script. */

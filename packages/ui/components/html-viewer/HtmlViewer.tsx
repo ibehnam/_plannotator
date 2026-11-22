@@ -580,6 +580,17 @@ export interface HtmlViewerProps {
    * `bridgeScriptUrl` path. Absent → nothing kept between loads, unchanged.
    */
   frameStorage?: HtmlFrameStorage;
+  /**
+   * Opt-in: the page's own `history.back()`, `forward()` and `go(n)` move the
+   * host's history instead (the frame's traversal of the host's entries is
+   * refused in a sandboxed frame), DELTA entries, at most 100 either way:
+   * only for a call made while a person's click in the page is being
+   * dispatched (it arrives on the link guard's port, as a link does, never as
+   * a window message), and until the page calls `pushState` (it then keeps
+   * entries of its own). Ignored in live (`src`) mode and on the
+   * `bridgeScriptUrl` path. Absent → the natives, unchanged.
+   */
+  onPageHistory?: (delta: number) => void;
 }
 
 /** The page items `HtmlViewerProps.frameStorage` keeps: each storage as `[key, value]` pairs. */
@@ -730,14 +741,16 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       pageNavigation = false,
       frameStart,
       frameStorage,
+      onPageHistory,
     },
     ref,
   ) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     // Read when a document is built and when the frame posts a change: a new
-    // store is never a reason to reload the page.
+    // store, or a new handler, is never a reason to reload the page.
     const frameStorageRef = useRef(frameStorage);
     frameStorageRef.current = frameStorage;
+    const pageHistoryOffered = !!onPageHistory;
     const globalCommentButtonRef = useRef<HTMLButtonElement>(null);
     const [iframeHeight, setIframeHeight] = useState(600);
     // Increment on every bridge-ready event so srcdoc navigations re-send
@@ -836,16 +849,22 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       // Inline path: history and storage are safe before the page's own head
       // scripts run, and the link guard runs before every script (the shim
       // too). The URL path gets both from the bridge asset. The shim is
-      // offered the page items kept so far, when the host keeps them.
+      // offered the page items kept so far and the page's own history calls,
+      // when the host keeps or takes them.
       const store = bridgeUrl ? undefined : frameStorageRef.current;
-      const offer: SandboxShimOffer | undefined = store
-        ? { storage: { ...readFrameStorage(store), limit: storageUnits(store.limit), perItem: storageUnits(store.perItem) } }
+      const offer: SandboxShimOffer | undefined = store || pageHistoryOffered
+        ? {
+            ...(store ? {
+              storage: { ...readFrameStorage(store), limit: storageUnits(store.limit), perItem: storageUnits(store.perItem) },
+            } : {}),
+            ...(pageHistoryOffered ? { history: true } : {}),
+          }
         : undefined;
       const framed = bridgeUrl ? page : injectLinkGuard(injectSandboxShim(page, offer), linkKey);
       // A page its server opened outside the session's roots gets no network.
       const html = hasNoNetworkMarker(rawHtml) ? injectNoNetworkCsp(framed) : framed;
       return { html, linkKey };
-    }, [liveMode, rawHtml, hostTheme, diffActive, bridgeUrl]);
+    }, [liveMode, rawHtml, hostTheme, diffActive, bridgeUrl, pageHistoryOffered]);
     const srcdoc = framedDocument?.html;
 
     useLayoutEffect(() => {
@@ -1092,6 +1111,7 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       live: liveSession,
       onPageChange,
       onLinkClick: onOpenLink ? openLinkWithFrame : undefined,
+      onPageHistory: liveMode || bridgeUrl ? undefined : onPageHistory,
       onBridgePointer: handleBridgePointer,
       onUnanchoredChange: handleBridgeUnanchored,
       maxAdditionalTargets,
