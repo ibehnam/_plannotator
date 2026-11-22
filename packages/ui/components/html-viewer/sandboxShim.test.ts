@@ -238,6 +238,71 @@ describe("a host that keeps the page's storage (frameStorage)", () => {
   });
 });
 
+describe("a host that takes the page's own history calls (onPageHistory)", () => {
+  // A sandboxed frame's own traversal of the host's entries is refused: md2web's Back did nothing.
+  test("during a person's click, Back, Forward and go(n) are the link guard's steps, and no native runs", () => {
+    const { frame, posted, followed, natives, person } = hostedFrame({ history: true });
+    person.clicking = true;
+    frame.run("history.back(); history.forward(); history.go(-2); history.go('3');");
+    expect(followed).toEqual([["history", -1], ["history", 1], ["history", -2], ["history", 3]]);
+    expect(natives).toEqual([]);
+    expect(posted).toEqual([]);
+  });
+
+  // A page could otherwise step the review's history on its own: back at its open, or between two of its
+  // entries for ever (its storage now counts across loads).
+  test("with no person's click the guard takes no step, and the call runs natively (which the frame refuses)", () => {
+    const { frame, followed, natives } = hostedFrame({ history: true });
+    frame.run("history.back(); history.go(2);");
+    expect(followed).toEqual([["history", -1], ["history", 2]]);
+    expect(natives).toEqual(["back", "go(2)"]);
+  });
+
+  test("go(0), go() and a step that is no number of entries reload natively, as in a tab", () => {
+    const { frame, followed, natives, person } = hostedFrame({ history: true });
+    person.clicking = true;
+    frame.run("history.go(0); history.go(); history.go(Infinity);");
+    expect(followed).toEqual([]);
+    expect(natives).toEqual(["go(0)", "go", "go(Infinity)"]);
+  });
+
+  test("once the page keeps entries of its own (pushState), it steps through them natively", () => {
+    const { frame, followed, natives, person } = hostedFrame({ history: true });
+    person.clicking = true;
+    frame.run("history.pushState({ step: 2 }, '', '#step=2'); history.back(); history.forward(); history.go(-1);");
+    expect(followed).toEqual([]);
+    expect(natives).toEqual(["back", "forward", "go(-1)"]);
+  });
+
+  test("a pushState the frame refused keeps no entry, so the page's Back is still the review's", () => {
+    // As a browser refuses a state it cannot clone (a DataCloneError).
+    const refuse = "history.pushState = function() { throw new TypeError('the state cannot be cloned'); };";
+    const { frame, followed, natives, person } = hostedFrame({ history: true }, refuse);
+    person.clicking = true;
+    expect(frame.run("var refused = false; try { history.pushState({ v: 1 }, ''); } catch (e) { refused = true; } refused")).toBe(true);
+    frame.run("history.back();");
+    expect(followed).toEqual([["history", -1]]);
+    expect(natives).toEqual([]);
+  });
+
+  test("a second run, even handed an offer again, does not wrap the calls twice", () => {
+    const { frame, followed, offerScript, person } = hostedFrame({ history: true });
+    person.clicking = true;
+    frame.run(offerScript!);
+    frame.run(SANDBOX_SHIM_SCRIPT);
+    frame.run("history.back()");
+    expect(followed).toEqual([["history", -1]]);
+  });
+
+  test("with no history in the offer the natives are untouched", () => {
+    const { frame, followed, natives, person } = hostedFrame(STORAGE([]));
+    person.clicking = true;
+    frame.run("history.back(); history.go(-1);");
+    expect(followed).toEqual([]);
+    expect(natives).toEqual(["back", "go(-1)"]);
+  });
+});
+
 const SHIM_TAG = `<script>${SANDBOX_SHIM_SCRIPT}</script>`;
 
 describe("where the shim runs", () => {

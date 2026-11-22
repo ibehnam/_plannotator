@@ -1,5 +1,5 @@
 /**
- * HtmlViewer's `frameStorage` (DOM-gated).
+ * HtmlViewer's `frameStorage` and `onPageHistory` (DOM-gated).
  *
  * Failures to catch:
  *  - A page's storage change lost on its way to the host's store, so the
@@ -8,13 +8,17 @@
  *    written into the store.
  *  - The next document built without what the store holds; a store that
  *    cannot be read breaking the document; a change rebuilding the page.
- *  - A host that passes no store getting anything but today's document.
+ *  - A page's own Back reaching the host as a window message (any page script
+ *    can post one, with no person's press), or with a delta that is not a
+ *    step (0, a fraction, past 100).
+ *  - A host that passes neither prop getting anything but today's document.
  */
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { HtmlFrameStorage, HtmlFrameStorageWrite } from './HtmlViewer';
+import { bridgeLinkPort } from '../../test-setup/bridgeLinkPort';
 
 const hasDom = typeof document !== 'undefined';
 const htmlViewerModule = hasDom ? await import('./HtmlViewer') : null;
@@ -138,7 +142,25 @@ describe.if(hasDom)('HtmlViewer frame host', () => {
     expect(writes).toEqual([]);
   });
 
-  test('with no store the document is built as before, with no offer', async () => {
+  // Any page script can post a window message, with no person's press: a page could step the review at its open,
+  // or bounce between two of its entries for ever. A step arrives on the link guard's port, which carries one only
+  // for a call made during a person's click in the page.
+  test("a page's own history step reaches onPageHistory on the link guard's port only, and as a step only", async () => {
+    const onPageHistory = mock((_delta: number) => {});
+    const { iframe, fromFrame } = await mountViewer({ onPageHistory });
+    expect(iframe.getAttribute('srcdoc')).toContain('window.__plannotatorFrameHost = {"history":true};');
+    await fromFrame({ type: 'plannotator-bridge-page-history', delta: -1 });
+    const port = await bridgeLinkPort(iframe);
+    for (const delta of [-1, 1, -100, 100, 0, 0.5, -101, 101, '1', Number.NaN]) {
+      await act(async () => {
+        port.postMessage({ type: 'plannotator-bridge-page-history', delta });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+    expect(onPageHistory.mock.calls.map((c) => c[0])).toEqual([-1, 1, -100, 100]);
+  });
+
+  test('with neither prop the document is built as before, with no offer', async () => {
     const { iframe } = await mountViewer({});
     expect(iframe.getAttribute('srcdoc')).not.toContain('__plannotatorFrameHost =');
   });

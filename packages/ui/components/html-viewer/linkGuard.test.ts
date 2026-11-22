@@ -133,6 +133,31 @@ describe.if(hasDom)('the link guard in a frame', () => {
     expect(sent).toEqual([]);
   });
 
+  // A page's own history.back() (md2web's Back button) moves the host's history only for a press in the page:
+  // without that rule a page could step the review at its open, or bounce between two of its entries for ever.
+  test("a page's history step goes out on the port only while a person's click is being dispatched", async () => {
+    page('<button id="back" type="button">Back</button>');
+    bridgeCall = () => guard.follow('history', { delta: -1 });
+    click(document.querySelector('#back')!);
+    await settle();
+    expect(sent).toEqual([{ type: 'plannotator-bridge-page-history', delta: -1 }]);
+  });
+
+  test('with no click, with a script\'s click, or as no step of whole entries within 100, a history step sends nothing', async () => {
+    page('<button id="back" type="button">Back</button>');
+    expect(guard.follow('history', { delta: -1 })).toBe(false);
+    bridgeCall = () => guard.follow('history', { delta: -1 });
+    click(document.querySelector('#back')!, false);
+    for (const delta of [0, -0, 0.5, 101, -101, Number.NaN, Number.POSITIVE_INFINITY, '1', null]) {
+      bridgeCall = () => guard.follow('history', { delta });
+      click(document.querySelector('#back')!);
+    }
+    bridgeCall = () => guard.follow('history', null);
+    click(document.querySelector('#back')!);
+    await settle();
+    expect(sent).toEqual([]);
+  });
+
   test('during a real click, another href or a javascript: link sends nothing', async () => {
     page('<a id="go" href="ok.html">Ok</a><a id="js" href="javascript:void 0">Js</a>');
     bridgeCall = () => guard.follow('link', { href: '/#thread=T2' });

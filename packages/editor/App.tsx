@@ -8124,6 +8124,7 @@ const App: React.FC = () => {
                     onUnanchoredChange={htmlRefresh.reportAnnotationRestore}
                     readOnly={documentReadOnly}
                     frameStorage={liveApp ? undefined : frameStorage}
+                    onPageHistory={liveApp ? undefined : documentHistory.go}
                   />
                 ) : isEditingMarkdown ? (
                   <MarkdownEditor

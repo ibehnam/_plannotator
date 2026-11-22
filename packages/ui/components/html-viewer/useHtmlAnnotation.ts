@@ -9,6 +9,7 @@ import type {
   UseAnnotationHighlighterReturn,
 } from "../../hooks/useAnnotationHighlighter";
 import { BRIDGE_PROTOCOL_VERSION } from "./bridge-script";
+import { MAX_PAGE_HISTORY_DELTA } from "./linkGuard";
 import {
   MAX_RICH_CLIPBOARD_HTML_LENGTH,
   MAX_RICH_CLIPBOARD_OUTPUT_LENGTH,
@@ -175,6 +176,7 @@ type BridgeMessage =
   | { type: `${typeof PREFIX}page-tap`; y: number }
   | { type: `${typeof PREFIX}page-change`; pageUrl: string }
   | { type: `${typeof PREFIX}link-click`; href: string }
+  | { type: `${typeof PREFIX}page-history`; delta: number }
   | { type: `${typeof PREFIX}restore-draft-missing`; id: string };
 
 /** Live proxied-app session credentials: the proxy origin messages must come
@@ -258,6 +260,12 @@ export interface UseHtmlAnnotationOptions {
    *  once per load the host started (`armLinkOffer`), never from a window
    *  message. */
   onLinkClick?: (href: string) => void;
+  /** A step of the host's history the page's own `history.back()`,
+   *  `forward()` or `go(n)` asked for (HtmlViewer's `onPageHistory`): DELTA
+   *  entries, at most `MAX_PAGE_HISTORY_DELTA` either way. Arrives only on the
+   *  link guard's port, so only for a call made during a person's click in
+   *  the page, never from a window message; never in live sessions. */
+  onPageHistory?: (delta: number) => void;
   /** scrollIntoView behavior for scroll-to (selecting an annotation).
    *  Absent: smooth, as before; pass 'auto' to honor reduced motion. */
   scrollBehavior?: 'smooth' | 'auto';
@@ -579,6 +587,15 @@ export function parseBridgeMessage(value: unknown): BridgeMessage | null {
       if (LINK_CONTROL_CHARS.test(href)) return null;
       return { type: value.type, href };
     }
+    case `${PREFIX}page-history`: {
+      // A step of the host's history the page asked for during a person's
+      // click (the link guard's `kind: 'history'`): a whole number of
+      // entries, never 0, bounded either way.
+      const delta = value.delta;
+      if (typeof delta !== "number" || !Number.isInteger(delta) || delta === 0) return null;
+      if (Math.abs(delta) > MAX_PAGE_HISTORY_DELTA) return null;
+      return { type: value.type, delta };
+    }
     case `${PREFIX}page-change`:
       // Live-mode SPA navigation report. Bounded like every bridge string.
       return typeof value.pageUrl === "string"
@@ -608,6 +625,7 @@ export function useHtmlAnnotation({
   live,
   onPageChange,
   onLinkClick,
+  onPageHistory,
   onBridgePointer,
   onUnanchoredChange,
   maxAdditionalTargets,
@@ -715,6 +733,8 @@ export function useHtmlAnnotation({
   onPageChangeRef.current = onPageChange;
   const onLinkClickRef = useRef(onLinkClick);
   onLinkClickRef.current = onLinkClick;
+  const onPageHistoryRef = useRef(onPageHistory);
+  onPageHistoryRef.current = onPageHistory;
   // The link guard's port (linkGuard.ts) for the document the host loaded
   // last, and the key that load's one offer must carry.
   const linkPortRef = useRef<MessagePort | null>(null);
@@ -875,6 +895,7 @@ export function useHtmlAnnotation({
       port.onmessage = (event: MessageEvent<unknown>) => {
         const message = parseBridgeMessage(event.data);
         if (message?.type === `${PREFIX}link-click`) onLinkClickRef.current?.(message.href);
+        else if (message?.type === `${PREFIX}page-history`) onPageHistoryRef.current?.(message.delta);
       };
       linkPortRef.current = port;
     }
@@ -895,8 +916,8 @@ export function useHtmlAnnotation({
       if (!message) return;
 
       const type = message.type;
-      // Taken from the link guard's port only (above): on the window it is forgeable.
-      if (type === `${PREFIX}link-click`) return;
+      // Taken from the link guard's port only (above): on the window they are forgeable.
+      if (type === `${PREFIX}link-click` || type === `${PREFIX}page-history`) return;
 
       if (
         !enabledRef.current

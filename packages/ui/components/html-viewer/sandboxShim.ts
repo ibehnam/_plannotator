@@ -34,8 +34,17 @@
  *   hold, since the store may), so the next page, and a reload of the tab,
  *   read what this one stored. A change past the limit stays with this load
  *   only, and the console says so once.
+ * - `history: true`: the page's own `history.back()`, `forward()` and
+ *   `go(n)` are handed to the link guard as a step of the host's history
+ *   (`follow('history', {delta})`), which sends it only while a person's
+ *   click is being dispatched (a sandboxed frame's own traversal of the
+ *   host's entries is refused), until the page calls `pushState`: from then
+ *   it keeps entries of its own, and steps through them natively. A call the
+ *   guard does not take, and `go(0)` (a reload of the page's own document),
+ *   run natively.
  *
- * No offer: no message is posted.
+ * No offer: no message is posted and no native is replaced but the two
+ * history writes above.
  *
  * Never in live mode: a proxied app runs on its own real origin. The shim is
  * idempotent: the inline path runs it first in `<head>` (so a page's own head
@@ -57,11 +66,12 @@ export const SANDBOX_SHIM_SCRIPT = `(function() {
   };
 
   var h = window.history;
+  var pushed = false;
   if (h && !(h.replaceState && h.replaceState.plannotatorSandboxShim)) {
     ['pushState', 'replaceState'].forEach(function(name) {
       var original = h[name];
       if (typeof original !== 'function') return;
-      var shim = function(state, unused, url) {
+      var adjust = function(state, unused, url) {
         if (url === undefined || url === null) return original.apply(this, arguments);
         var raw = String(url);
         var own = location.href.split('#')[0];
@@ -84,9 +94,30 @@ export const SANDBOX_SHIM_SCRIPT = `(function() {
           return original.call(this, state, unused, own + hash);
         }
       };
+      var shim = function() {
+        var result = adjust.apply(this, arguments);
+        if (name === 'pushState') pushed = true;
+        return result;
+      };
       shim.plannotatorSandboxShim = true;
       h[name] = shim;
     });
+    var guard = window.__plannotatorLinkGuard;
+    if (offer && offer.history === true && guard && typeof guard.follow === 'function') {
+      [['back', -1], ['forward', 1], ['go', 0]].forEach(function(step) {
+        var original = h[step[0]];
+        if (typeof original !== 'function') return;
+        h[step[0]] = function(delta) {
+          var n = step[1];
+          if (step[0] === 'go') {
+            n = Number(delta);
+            n = isFinite(n) ? Math.trunc(n) : 0;
+          }
+          if (!pushed && n !== 0 && guard.follow('history', { delta: n })) return;
+          return original.apply(this, arguments);
+        };
+      });
+    }
   }
 
   // What the review's store holds of each storage (key to its size), the
