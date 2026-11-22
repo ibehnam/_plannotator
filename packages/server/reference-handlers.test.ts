@@ -52,11 +52,12 @@ async function postDocExists(body: unknown, options: { rootPath?: string; rootPa
 	}>;
 }
 
-async function getDoc(path: string, options: { base?: string; rootPaths?: string[]; sourceSaveFilePath?: string; doc?: boolean }) {
+async function getDoc(path: string, options: { base?: string; rootPaths?: string[]; sourceSaveFilePath?: string; doc?: boolean; convert?: boolean }) {
 	const url = new URL("http://localhost/api/doc");
 	url.searchParams.set("path", path);
 	if (options.base) url.searchParams.set("base", options.base);
 	if (options.doc) url.searchParams.set("doc", "1");
+	if (options.convert) url.searchParams.set("convert", "1");
 	return handleDoc(new Request(url.toString()), {
 		rootPaths: options.rootPaths,
 		sourceSaveFilePath: options.sourceSaveFilePath,
@@ -480,17 +481,36 @@ describe("ambiguous resolution", () => {
 	});
 });
 
-describe("raw HTML size cap", () => {
-	test("rejects an oversized .html with 413 whether or not a base is given", async () => {
+// A linked page renders raw in the frame as the reviewed one does, and the
+// reviewed one is read whole (annotate-resolution.ts). The cap refused a
+// generated page past 2MB (a long PDF's) only when a link led to it.
+describe("raw HTML has no size cap, as the reviewed page has none", () => {
+	test("a 3MB linked .html opens raw, whether or not a base is given", async () => {
 		const root = makeTempDir("plannotator-html-cap-");
-		writeFileSync(join(root, "huge.html"), `<p>${"x".repeat(2 * 1024 * 1024 + 1)}</p>`);
+		const page = `<p>${"x".repeat(3 * 1024 * 1024)}</p>`;
+		writeFileSync(join(root, "huge.html"), page);
 
-		const withoutBase = await getDoc("huge.html", { rootPaths: [root] });
-		const withBase = await getDoc("huge.html", { rootPaths: [root], base: root });
+		for (const options of [{ rootPaths: [root] }, { rootPaths: [root], base: root }]) {
+			const res = await getDoc("huge.html", options);
+			const data = await res.json() as { rawHtml?: string; renderAs?: string; error?: string };
+			expect(res.status).toBe(200);
+			expect(data.error).toBeUndefined();
+			expect(data.renderAs).toBe("html");
+			expect(data.rawHtml?.length).toBe(page.length);
+		}
+	});
 
-		expect(withoutBase.status).toBe(413);
-		expect(withBase.status).toBe(413);
-		expect((await withBase.json() as { error?: string }).error).toBe("File too large (max 2MB)");
+	test("the same page converted to markdown, and a 3MB .md, keep the cap", async () => {
+		const root = makeTempDir("plannotator-html-cap-");
+		writeFileSync(join(root, "huge.html"), `<p>${"x".repeat(3 * 1024 * 1024)}</p>`);
+		writeFileSync(join(root, "huge.md"), `# big\n${"x".repeat(3 * 1024 * 1024)}\n`);
+
+		const converted = await getDoc("huge.html", { rootPaths: [root], convert: true });
+		const markdown = await getDoc("huge.md", { rootPaths: [root] });
+
+		expect(converted.status).toBe(413);
+		expect(markdown.status).toBe(413);
+		expect((await converted.json() as { error?: string }).error).toBe("File too large (max 2MB)");
 	});
 });
 
