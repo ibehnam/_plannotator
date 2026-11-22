@@ -3,8 +3,11 @@ import {
   closeSessionTabs,
   closeTabScript,
   handleCloseTabRequest,
+  MAX_CLOSE_AFTER_MS,
   sessionTabPrefixes,
+  settleSession,
   SCRIPTABLE_BROWSERS,
+  type CloseTabOutcome,
   type OsascriptResult,
 } from "./close-tab";
 
@@ -105,5 +108,99 @@ describe("closing a session's tab from the server", () => {
     );
     expect(foreign.status).toBe(403);
     expect(seen).toEqual([51747]);
+  });
+
+  const closeRequest = (afterMs?: unknown) => {
+    const url = new URL("http://localhost:51747/api/close-tab");
+    const body = afterMs === undefined ? undefined : JSON.stringify({ afterMs });
+    return { url, req: new Request(url, { method: "POST", headers: { origin: "http://localhost:51747" }, body }) };
+  };
+
+  // The page asks the moment its done screen appears, while the session is
+  // certainly up, and the server closes the tab when the countdown ends.
+  test("the request is held for the page's countdown, and the tabs are closed at its end", async () => {
+    const started = Date.now();
+    let closedAt = 0;
+    const { req, url } = closeRequest(200);
+    const response = await handleCloseTabRequest(req, url, async () => {
+      closedAt = Date.now() - started;
+      return { closed: 1, browsers: ["com.brave.Browser"] };
+    });
+    expect(closedAt).toBeGreaterThanOrEqual(190);
+    expect(await response.json()).toEqual({ closed: 1, browsers: ["com.brave.Browser"] });
+  });
+
+  test("the countdown is held for 5 s at most; a missing, negative or malformed one is none", async () => {
+    const waited: number[] = [];
+    const wait = async (ms: number) => { waited.push(ms); };
+    const close = async (): Promise<CloseTabOutcome> => ({ closed: 1, browsers: [] });
+    for (const afterMs of [60_000, -5, "3000", Number.NaN, undefined, 1234.4]) {
+      const { req, url } = closeRequest(afterMs);
+      await handleCloseTabRequest(req, url, close, { wait });
+    }
+    expect(waited).toEqual([MAX_CLOSE_AFTER_MS, 0, 0, 0, 0, 1234]);
+  });
+
+  test("every browser is checked and closed at the same time, not one after another", async () => {
+    const running = new Set(["com.brave.Browser", "com.google.Chrome", "com.apple.Safari"]);
+    const run = async (args: string[]): Promise<OsascriptResult> => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const probe = /^application id "([^"]+)" is running$/.exec(args[1] ?? "");
+      if (probe) return { code: 0, stdout: running.has(probe[1]!) ? "true\n" : "false\n", stderr: "" };
+      return { code: 0, stdout: "1\n", stderr: "" };
+    };
+    const started = Date.now();
+    const outcome = await closeSessionTabs(51747, { platform: "darwin", remote: false, run });
+    // One check and one close each, together: about 200 ms, where one after another took 1.1 s.
+    expect(Date.now() - started).toBeLessThan(600);
+    expect(outcome).toEqual({ closed: 3, browsers: ["com.brave.Browser", "com.google.Chrome", "com.apple.Safari"] });
+  });
+
+  test("a close script that ran out of time (macOS asking whether Plannotator may control the browser) says so", async () => {
+    const { run } = fakeOsascript({ "com.brave.Browser": true }, () => ({ code: 124, stdout: "", stderr: "osascript timed out" }));
+    expect(await closeSessionTabs(51747, { platform: "darwin", remote: false, run }))
+      .toEqual({ closed: 0, reason: "timeout", browsers: ["com.brave.Browser"] });
+  });
+
+  // The lifetime the page counts on: a decision settles the session, and a
+  // close the page asked for is answered before the server stops.
+  test("a held request is answered before the session's server stops", async () => {
+    const server = Bun.serve({
+      port: 0,
+      idleTimeout: 0,
+      fetch: (req) => handleCloseTabRequest(req, new URL(req.url), async () => ({ closed: 1, browsers: ["com.brave.Browser"] })),
+    });
+    try {
+      const asked = Date.now();
+      let answeredAfter = -1;
+      const answer = fetch(`http://localhost:${server.port}/api/close-tab`, {
+        method: "POST",
+        body: JSON.stringify({ afterMs: 300 }),
+      }).then(async (response) => {
+        answeredAfter = Date.now() - asked;
+        return response.json();
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // The decision: the session settles (its 1.5 s, short here), then stops.
+      await settleSession(10);
+      const stoppedAfter = Date.now() - asked;
+      server.stop();
+      expect(await answer).toEqual({ closed: 1, browsers: ["com.brave.Browser"] });
+      // Held for the countdown, and the server stopped only once it was over.
+      expect(answeredAfter).toBeGreaterThanOrEqual(280);
+      expect(stoppedAfter).toBeGreaterThanOrEqual(280);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("settling waits for no close past its bound", async () => {
+    const { req, url } = closeRequest(0);
+    void handleCloseTabRequest(req, url, () => new Promise<CloseTabOutcome>(() => {}), { graceMs: 150 });
+    const started = Date.now();
+    await settleSession(10);
+    const waited = Date.now() - started;
+    expect(waited).toBeGreaterThanOrEqual(140);
+    expect(waited).toBeLessThan(1_000);
   });
 });

@@ -15,6 +15,12 @@
  * launched, and macOS asks about Automation only for one that is. A remote
  * session's browser is on another machine, and other platforms have no such
  * interface, so there the page's own close is all there is.
+ *
+ * The page asks the moment its done screen appears, while the session is
+ * certainly up, with its countdown (`{ afterMs }`): the request is held and the
+ * tabs are closed when the countdown ends. The session stays up for it
+ * (`settleSession`, what every server does between its decision and its stop),
+ * so the answer reaches the page whatever opened the tab.
  */
 import { spawn } from "node:child_process";
 import { isSameOriginOrNoOrigin } from "@plannotator/shared/request-origin";
@@ -97,6 +103,9 @@ export interface OsascriptResult {
   stderr: string;
 }
 
+/** The exit `runOsascript` gives a run it stopped. */
+export const OSASCRIPT_TIMED_OUT = 124;
+
 /** Run `osascript` with ARGS, stopped after TIMEOUT_MS; a failure to start reads as a non-zero exit. */
 export function runOsascript(args: string[], timeoutMs = 5_000): Promise<OsascriptResult> {
   return new Promise((resolve) => {
@@ -112,7 +121,7 @@ export function runOsascript(args: string[], timeoutMs = 5_000): Promise<Osascri
     const child = spawn("osascript", args, { stdio: ["ignore", "pipe", "pipe"] });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish({ code: 124, stdout, stderr: stderr || "osascript timed out" });
+      finish({ code: OSASCRIPT_TIMED_OUT, stdout, stderr: stderr || "osascript timed out" });
     }, timeoutMs);
     child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
@@ -121,8 +130,9 @@ export function runOsascript(args: string[], timeoutMs = 5_000): Promise<Osascri
   });
 }
 
-/** Why no tab was closed: the done screen names it. */
-export type CloseTabRefusal = "remote" | "platform" | "no-browser" | "not-authorized" | "failed";
+/** Why no tab was closed: the done screen names it. `timeout`: a close script ran out of time, which is
+ *  what macOS's Automation prompt, waiting for an answer, looks like from here. */
+export type CloseTabRefusal = "remote" | "platform" | "no-browser" | "not-authorized" | "timeout" | "failed";
 
 export interface CloseTabOutcome {
   /** How many of this session's tabs were closed. */
@@ -147,42 +157,114 @@ export async function closeSessionTabs(
   if (remote) return { closed: 0, reason: "remote", browsers: [] };
   if (platform !== "darwin") return { closed: 0, reason: "platform", browsers: [] };
   const prefixes = sessionTabPrefixes(port);
-  let closed = 0;
-  let notAuthorized = false;
-  let failed = false;
-  const browsers: string[] = [];
-  for (const browser of SCRIPTABLE_BROWSERS) {
+  // Every browser at once: each check and its close script take up to 5 s.
+  const answers = await Promise.all(SCRIPTABLE_BROWSERS.map(async (browser) => {
     // `is running` sends nothing to the browser: a missing one errors, and is skipped.
     const probe = await run(["-e", `application id "${browser.id}" is running`]);
-    if (probe.code !== 0 || probe.stdout.trim() !== "true") continue;
-    browsers.push(browser.id);
-    const result = await run(["-e", closeTabScript(browser.id, browser.kind), ...prefixes]);
+    if (probe.code !== 0 || probe.stdout.trim() !== "true") return null;
+    return { id: browser.id, result: await run(["-e", closeTabScript(browser.id, browser.kind), ...prefixes]) };
+  }));
+  let closed = 0;
+  let notAuthorized = false;
+  let timedOut = false;
+  let failed = false;
+  const browsers: string[] = [];
+  for (const answer of answers) {
+    if (!answer) continue;
+    browsers.push(answer.id);
+    const { result } = answer;
     if (result.code === 0) {
       closed += Number.parseInt(result.stdout.trim(), 10) || 0;
     } else if (/-1743|not authori[sz]ed|not allowed/i.test(result.stderr)) {
       notAuthorized = true;
+    } else if (result.code === OSASCRIPT_TIMED_OUT) {
+      timedOut = true;
     } else {
       failed = true;
     }
   }
   if (closed > 0) return { closed, browsers };
-  const reason: CloseTabRefusal = notAuthorized ? "not-authorized" : failed ? "failed" : "no-browser";
+  const reason: CloseTabRefusal = notAuthorized ? "not-authorized" : timedOut ? "timeout" : failed ? "failed" : "no-browser";
   return { closed: 0, reason, browsers };
 }
 
+/** The longest the server holds a close for the page's countdown. */
+export const MAX_CLOSE_AFTER_MS = 5_000;
+
 /**
- * POST /api/close-tab: the done screen's request, after the page's own
- * `window.close()` was refused. Same-origin only; answers the outcome as JSON.
+ * How long past its countdown a held close may run: the browsers' checks and
+ * close scripts, all at once, each stopped at 5 s (a first close waits on
+ * macOS's Automation prompt), and a margin.
+ */
+export const CLOSE_GRACE_MS = 6_000;
+
+/** The closes the page asked for that are not answered yet, each with the time it must be over by. */
+const pendingCloses = new Map<Promise<unknown>, number>();
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * What a session does between its decision and its stop: MS (the done screen's
+ * own requests), then every close the page asked for, each until it is
+ * answered or its bound passes, so the server stops the moment the last answer
+ * is out. With none asked, MS, as before.
+ */
+export async function settleSession(ms: number): Promise<void> {
+  await sleep(ms);
+  for (;;) {
+    const now = Date.now();
+    for (const [work, deadline] of pendingCloses) if (deadline <= now) pendingCloses.delete(work);
+    if (pendingCloses.size === 0) break;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled([...pendingCloses.keys()]),
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, Math.max(...pendingCloses.values()) - now); }),
+    ]);
+    clearTimeout(timer);
+  }
+  // The last answer is handed to its socket before the server stops.
+  await sleep(0);
+}
+
+/** The page's countdown from its body (`{ afterMs }`), at most MAX_CLOSE_AFTER_MS; none when absent or malformed. */
+async function closeDelay(req: Request): Promise<number> {
+  try {
+    const body: unknown = await req.json();
+    const afterMs = body && typeof body === "object" ? (body as { afterMs?: unknown }).afterMs : undefined;
+    if (typeof afterMs !== "number" || !Number.isFinite(afterMs)) return 0;
+    return Math.min(MAX_CLOSE_AFTER_MS, Math.max(0, Math.round(afterMs)));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * POST /api/close-tab: the done screen's request for a tab that cannot close
+ * itself, made as the screen appears, with its countdown (`{ afterMs }`, at
+ * most 5 s). The request is held for the countdown, the tabs are closed, and
+ * the outcome is the answer, as JSON; the session stays up for it
+ * (`settleSession`). Same-origin only. WAIT and GRACE_MS stand in for the
+ * countdown's sleep and the bound in tests.
  */
 export async function handleCloseTabRequest(
   req: Request,
   url: URL,
   close: (port: number) => Promise<CloseTabOutcome> = (port) => closeSessionTabs(port),
+  options: { wait?: (ms: number) => Promise<void>; graceMs?: number } = {},
 ): Promise<Response> {
   if (!isSameOriginOrNoOrigin(req.headers.get("origin"), url.host, req.headers.get("sec-fetch-site"))) {
     return Response.json({ error: "Cross-origin requests are not allowed" }, { status: 403 });
   }
   const port = Number.parseInt(url.port, 10);
   if (!Number.isInteger(port) || port <= 0) return Response.json({ closed: 0, reason: "failed", browsers: [] });
-  return Response.json(await close(port));
+  const afterMs = await closeDelay(req);
+  const wait = options.wait ?? sleep;
+  const work = (async () => {
+    await wait(afterMs);
+    return close(port);
+  })();
+  pendingCloses.set(work, Date.now() + afterMs + (options.graceMs ?? CLOSE_GRACE_MS));
+  const done = () => { pendingCloses.delete(work); };
+  work.then(done, done);
+  return Response.json(await work);
 }
