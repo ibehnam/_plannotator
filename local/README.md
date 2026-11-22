@@ -14,6 +14,24 @@
    ``- **selection** `#p8-37` chars 12-16``. An annotation without a position exports as before.
 5. That line, described in `docs/agent-guides/guides-and-shared-ui.md` (its own commit, so a
    conflict there can be skipped).
+6. **Linked documents are history entries** (`packages/editor/hooks/useDocumentHistory.ts`, App):
+   each document the reviewer opens is an entry of the tab's history, addressed by its path below
+   the reviewed file's folder (else `/?doc=`), so the browser's Back and Forward, a reload and a
+   pasted address reach the review's pages.
+7. **A page's storage lasts the review** (`frameStorage.ts`, HtmlViewer's `frameStorage`, the
+   sandbox shim): a page's localStorage and sessionStorage are kept in the review tab's own
+   sessionStorage and seed every later page (md2web's theme).
+8. **A page's own history calls move the review's history** (HtmlViewer's `onPageHistory`, the
+   shim, the link guard): a page's own Back works for a person's click in it, one step at a time,
+   never out of the review.
+9. **A linked HTML page has no size cap** (`reference-handlers.ts`), as the reviewed one has none.
+10. **Back and Forward, named** (`HistorySteps.tsx`, DocBadges, TableOfContents,
+    HtmlSurfaceControls, the compact menu), beside the jump to the root, which names the root.
+11. **A page open leaves the sidebar alone**, so Wide and Focus survive moving between pages.
+12. **Wide and Focus are remembered** for the next review (`annotateViewChoice`, a cookie).
+13. **No block outline on a page open**: Vim's BLOCK starts on the first key (`useVimSelection`,
+    the bridge's `focus-vim`).
+14. Those, described in the agent guides (its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
@@ -31,7 +49,7 @@
   releases came after it.
 - `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
   the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' four suites in upstream's test sandbox (`--full`: every unit
+  `bun run typecheck` and the patches' eighteen suites in upstream's test sandbox (`--full`: every unit
   suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
   on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
   a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.

@@ -29,6 +29,20 @@ suites=(
   packages/ui/components/html-viewer/htmlPinpointProtocol.test.tsx
   packages/core/html-anchor.test.ts
   packages/ui/utils/parser.test.ts
+  packages/ui/components/html-viewer/HtmlViewer.reopenComment.test.tsx
+  packages/editor/hooks/useDocumentHistory.test.tsx
+  packages/editor/frameStorage.test.ts
+  packages/ui/components/html-viewer/sandboxShim.test.ts
+  packages/ui/components/html-viewer/HtmlViewer.frameHost.test.tsx
+  packages/ui/components/html-viewer/linkGuard.test.ts
+  packages/server/reference-handlers.test.ts
+  packages/ui/components/DocBadges.test.tsx
+  packages/ui/components/TableOfContents.linkedDoc.test.tsx
+  packages/ui/components/HtmlSurfaceControls.test.tsx
+  packages/editor/App.bundleBackScroll.test.tsx
+  packages/editor/App.annotateView.test.tsx
+  packages/ui/hooks/useVimSelection.test.tsx
+  packages/ui/components/Viewer.vimMode.integration.test.tsx
 )
 # Files upstream's sandbox refuses to run (scripts/test-sandbox.ts REFUSED).
 refused=(apps/pi-extension/inbox.test.ts tests/never-touch-the-real-inbox.test.ts)
