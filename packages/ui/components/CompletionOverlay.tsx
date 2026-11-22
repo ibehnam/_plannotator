@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useAutoClose, type HostCloseResult } from '../hooks/useAutoClose';
+import { BROWSER_KEPT_TAB_HINT } from '../utils/serverTabClose';
 
 // ---------------------------------------------------------------------------
 // Icons
@@ -27,12 +28,11 @@ const ChatBubbleIcon = () => (
 
 interface CompletionOverlayProps {
   /** `done`: the session finished with nothing sent (an annotate Done with
-   *  no feedback). Neutral styling. `done` and `exited` (Close) send nothing,
-   *  so neither shows the "response has been sent" line. */
+   *  no feedback). Neutral styling. */
   submitted: 'approved' | 'denied' | 'feedback' | 'done' | 'exited' | null | false;
   title: string;
+  /** What happened, naming no agent: Plannotator is not one agent's tool, nor only agents'. */
   subtitle: string;
-  agentLabel: string;
   /**
    * Optional destinations shown under the subtitle as ordinary links (opened
    * in a new tab by a real click, so no popup blocker applies) — e.g. the PR
@@ -53,14 +53,13 @@ interface CompletionOverlayProps {
   hostClose?: (afterMs: number) => Promise<HostCloseResult>;
 }
 
-export function CompletionOverlay({ submitted, title, subtitle, agentLabel, links, footer, hostClose }: CompletionOverlayProps) {
+export function CompletionOverlay({ submitted, title, subtitle, links, footer, hostClose }: CompletionOverlayProps) {
   const { state, enableAndStart } = useAutoClose(!!submitted, hostClose);
 
   if (!submitted) return null;
 
   const isApproved = submitted === 'approved';
   const isDone = submitted === 'done';
-  const sentNothing = isDone || submitted === 'exited';
   const hasFooter = footer !== undefined && footer !== null && footer !== false;
 
   return (
@@ -117,15 +116,16 @@ export function CompletionOverlay({ submitted, title, subtitle, agentLabel, link
                 Could not close this tab automatically. Please close it manually.
               </p>
               <p className="text-xs text-muted-foreground/60" data-close-hint>
-                {state.hint ?? `Auto-close works when the tab is opened by ${agentLabel}.`}
+                {state.hint ?? BROWSER_KEPT_TAB_HINT}
               </p>
             </>
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                You can close this tab and return to <span className="text-foreground font-medium">{agentLabel}</span>.
+                You can close this tab.
               </p>
-              {state.phase === 'prompt' ? (
+              {/* What was sent is the subtitle's to say. */}
+              {state.phase === 'prompt' && (
                 <>
                   <label className="flex items-center justify-center gap-2 cursor-pointer group">
                     <input type="checkbox" checked={false} onChange={enableAndStart} className="accent-primary" />
@@ -135,8 +135,6 @@ export function CompletionOverlay({ submitted, title, subtitle, agentLabel, link
                   </label>
                   <p className="text-xs text-muted-foreground/60">You can change the delay in Settings.</p>
                 </>
-              ) : sentNothing ? null : (
-                <p className="text-xs text-muted-foreground/60">Your response has been sent.</p>
               )}
             </>
           )}

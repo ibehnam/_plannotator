@@ -12,6 +12,14 @@ export const REFUSAL_HINTS: Record<string, string> = {
     'macOS is asking whether Plannotator may control your browser: allow it under System Settings › Privacy & Security › Automation, and the next tab closes itself.',
 };
 
+/**
+ * The done screen's line when the tab stayed open and nobody said why: the
+ * browser's own rule. It names no agent: Plannotator is not one agent's tool,
+ * nor only agents'.
+ */
+export const BROWSER_KEPT_TAB_HINT =
+  'Your browser lets a page close only a tab that a script opened, or one still on its first page.';
+
 /** The done screen's line when the request found no session: auto-close was turned on after the session ended. */
 export const ENDED_HINT =
   'This session had already ended, so Plannotator could not close its tab. With auto-close on before you finish, the tab closes itself.';

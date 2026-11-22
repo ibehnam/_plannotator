@@ -653,11 +653,10 @@ function completionTitle(): string | null {
 describe.if(hasDom)("annotate completion screen", () => {
   type GlimpseWindow = Window & { glimpse?: { close?: () => void } };
 
-  // The footer's "Your response has been sent." line renders in the auto-close
-  // `closed` phase: an immediate auto-close whose close request went to a host
-  // window (Glimpse, or the VS Code panel's parent frame), so the tab stays up.
-  // With the default delay the footer shows the auto-close prompt instead and
-  // an assertion about the line would pass vacuously.
+  // The screen's lines render in the auto-close `closed` phase: an immediate
+  // auto-close whose close request went to a host window (Glimpse, or the VS
+  // Code panel's parent frame), so the tab stays up. With the default delay
+  // the footer shows the auto-close prompt instead.
   afterEach(() => {
     delete (window as GlimpseWindow).glimpse;
   });
@@ -680,7 +679,12 @@ describe.if(hasDom)("annotate completion screen", () => {
     const text = completionText();
     expect(text).not.toContain("Feedback Sent");
     expect(text).not.toContain("address your feedback");
-    expect(text).not.toContain("has been sent");
+    expect(text).not.toContain("sent back");
+  }
+
+  /** Plannotator is not one agent's tool, nor only agents': no done screen names one. */
+  function expectNoAgentNamed(): void {
+    expect(completionText()).not.toMatch(/Codex|Claude|OpenCode|\bPi\b|agent/i);
   }
 
   test("Done with nothing to send shows the Done screen, not Feedback Sent", async () => {
@@ -695,7 +699,9 @@ describe.if(hasDom)("annotate completion screen", () => {
     expect(completionState()).toBe("done");
     // Deliberate label: the title names the decision the reviewer made.
     expect(completionTitle()).toBe("Done");
+    expect(completionText()).toContain("Nothing was sent.");
     expectNoSentClaim();
+    expectNoAgentNamed();
   });
 
   test("a note that was sent still shows Feedback Sent", async () => {
@@ -711,9 +717,10 @@ describe.if(hasDom)("annotate completion screen", () => {
     expect(submissions[0]!.nothingToSend).toBeUndefined();
     expect(completionState()).toBe("denied");
     expect(completionTitle()).toBe("Feedback Sent");
-    // Something was sent, so the footer still says so (this also proves the
-    // harness reaches the footer line the nothing-sent tests assert away).
-    expect(completionText()).toContain("has been sent");
+    // Something was sent, so the screen says so (this also proves the harness
+    // reaches the line the nothing-sent tests assert away).
+    expect(completionText()).toContain("Your feedback on the file was sent back.");
+    expectNoAgentNamed();
   });
 
   test("Close keeps Session Closed but does not claim a response was sent", async () => {
@@ -733,6 +740,7 @@ describe.if(hasDom)("annotate completion screen", () => {
     expect(completionState()).toBe("exited");
     expect(completionTitle()).toBe("Session Closed");
     expectNoSentClaim();
+    expectNoAgentNamed();
   });
 
   test("folder: a comment on another document still shows Feedback Sent", async () => {
@@ -827,6 +835,8 @@ describe.if(hasDom)("annotate completion screen", () => {
 
     expect(submissions[0]!.endpoint).toBe("approve");
     expect(completionState()).toBe("approved");
+    expect(completionText()).toContain("Your approval was sent back.");
+    expectNoAgentNamed();
   });
 
   test("annotate-last: Done with nothing to send shows the Done screen", async () => {
