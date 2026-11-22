@@ -64,6 +64,12 @@
     the done screen appears, the server closes it when the countdown ends and stays up for it; the
     browsers are checked at once, and a timeout or an ended session says so.
 28. Those, described in the agent guides (its own commit, as 5).
+29. **Only a lone Alt switches Select and Pinpoint** (`hooks/useInputMethodSwitch`): Alt with Cmd, Ctrl
+    or Shift held, or with another key while it is down, is a chord (a Hyper key's Escape, Alt+1); a
+    tap's revert outlives renders, so taps never leave Pinpoint stuck.
+30. **The done screen names no agent** (`CompletionOverlay`, both apps' subtitles): what was sent back,
+    or that nothing was, and that the tab can close.
+31. Those, described in the agent guides (its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
