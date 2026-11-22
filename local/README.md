@@ -35,6 +35,14 @@
 15. **An HTML page opens in Interact** (App's `htmlAnnotateArmed`): its own controls answer the
     first click, and `Mod+Shift+A` arms Annotate.
 16. That, described in the agent guides (its own commit, as 5).
+17. **Escape closes a composer opened over an HTML page, wherever focus is** (the bridge's
+    `set-host-overlay` and `overlay-escape`; `release-focus` as the composer opens).
+18. **The done screen's tab closes after a review that followed links** (`packages/server/close-tab.ts`:
+    the server closes it through the browser's AppleScript on macOS).
+19. **An HTML page takes Markdown's annotation modes** (`utils/annotationModes`): the toolstrip above
+    the page, Markup, Comment, Redline and Label with Shift+1 to 4, Delete and the label picker; a
+    pinned element opens the composer in Markup.
+20. Those, described in the agent guides (its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
@@ -52,7 +60,7 @@
   releases came after it.
 - `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
   the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' nineteen suites in upstream's test sandbox (`--full`: every unit
+  `bun run typecheck` and the patches' twenty-two suites in upstream's test sandbox (`--full`: every unit
   suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
   on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
   a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.
