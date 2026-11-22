@@ -34,6 +34,7 @@ import { Tooltip } from './Tooltip';
 import { modKey } from '../utils/platform';
 import { formatShortcutBindingText, formatShortcutBindingTokens } from '../shortcuts/core';
 import { htmlAnnotateShortcuts } from '../shortcuts/plan-review/htmlAnnotate.shortcuts';
+import { HistoryStepButtons, RootJumpIcon, type HistorySteps } from './HistorySteps';
 
 /** Binding overrides, in the registry's normalized syntax (`Mod+Shift+X`).
  *  `null` renders no shortcut row for that control. Defaults come from the
@@ -174,6 +175,12 @@ export interface HtmlSurfaceControlsProps {
   /** Tooltip description and aria-label for back, e.g. "Back to index.html".
    *  Default: `labels.backTitle`. */
   backDescription?: string;
+  /** A host that keeps its documents in the tab's history: Back and Forward,
+   *  each named after its page, left of back, which then jumps to the root
+   *  under ROOTNAME with a house (Back steps). Absent → today's controls. */
+  historySteps?: HistorySteps | null;
+  /** Back's visible text beside the steps: the root's own name. */
+  rootName?: string;
   /** Compact touch shells put these actions in a menu instead: render nothing. */
   compact?: boolean;
   labels?: HtmlSurfaceControlLabels;
@@ -191,6 +198,8 @@ export function HtmlSurfaceControls({
   isRefreshing = false,
   onBack,
   backDescription,
+  historySteps,
+  rootName,
   compact = false,
   labels,
   shortcuts,
@@ -208,8 +217,15 @@ export function HtmlSurfaceControls({
   const backLabel = backDescription ?? text.backTitle;
   return (
     <>
-      {/* Back, leftmost: the way out of a linked document that does not
-          depend on the sidebar being open. */}
+      {/* Back and Forward through the host's history, leftmost. */}
+      <HistoryStepButtons
+        steps={historySteps}
+        buttonClass="ml-1 flex min-w-0 max-w-[14rem] items-center gap-1 rounded px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        iconClass="h-3.5 w-3.5"
+        nameClass="hidden min-w-0 truncate sm:inline"
+      />
+      {/* Back: the way out of a linked document that does not depend on the
+          sidebar being open (beside the steps, the jump to the root). */}
       {onBack && (
         <>
           <ControlTooltip description={backLabel} binding={keys.back}>
@@ -221,19 +237,23 @@ export function HtmlSurfaceControls({
               className="ml-1 flex items-center gap-1 rounded px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
               aria-label={backLabel}
             >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-3.5 w-3.5"
-              >
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
-              <span className="hidden sm:inline">{text.back}</span>
+              {historySteps !== undefined ? (
+                <RootJumpIcon className="h-3.5 w-3.5" />
+              ) : (
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-3.5 w-3.5"
+                >
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              )}
+              <span className="hidden sm:inline">{historySteps !== undefined && rootName ? rootName : text.back}</span>
             </button>
           </ControlTooltip>
           <ShortcutDescription id={BACK_SHORTCUT_ID} binding={keys.back} />

@@ -290,4 +290,36 @@ describe.if(hasDom)('HtmlSurfaceControls back', () => {
     const el = render({ onBack: () => {}, compact: true });
     expect(el.querySelector('button')).toBeNull();
   });
+
+  // A step through the review's history beside the root jump: before, Back jumped to the root from any depth.
+  test("with the review's history: Back and Forward first, named after their pages; back jumps to the root by its name", () => {
+    const steps: string[] = [];
+    const el = render({
+      onBack: () => steps.push('root'),
+      backDescription: 'Go to index.html',
+      rootName: 'index.html',
+      historySteps: { back: { name: 'second.html', go: () => steps.push('back') }, forward: { name: 'fourth.html', go: () => steps.push('forward') } },
+    });
+    const controls = Array.from(el.querySelectorAll('button'));
+    const stepBack = el.querySelector<HTMLButtonElement>('[data-history-back]')!;
+    const stepForward = el.querySelector<HTMLButtonElement>('[data-history-forward]')!;
+    expect(controls.slice(0, 3)).toEqual([stepBack, stepForward, back(el)!]);
+    expect(stepBack.getAttribute('aria-label')).toBe('Back to second.html');
+    expect(stepForward.getAttribute('aria-label')).toBe('Forward to fourth.html');
+    expect(back(el)!.getAttribute('aria-label')).toBe('Go to index.html');
+    expect(back(el)!.textContent).toBe('index.html');
+    act(() => { stepBack.click(); stepForward.click(); back(el)!.click(); });
+    expect(steps).toEqual(['back', 'forward', 'root']);
+  });
+
+  test('a step that leads nowhere is absent, and with no history back reads Back as before', () => {
+    const onlyForward = render({ onBack: () => {}, historySteps: { back: null, forward: { name: 'b.html', go: () => {} } } });
+    expect(onlyForward.querySelector('[data-history-back]')).toBeNull();
+    expect(onlyForward.querySelector('[data-history-forward]')).not.toBeNull();
+    act(() => root?.unmount());
+    container?.remove();
+    const plain = render({ onBack: () => {} });
+    expect(plain.querySelector('[data-history-back], [data-history-forward]')).toBeNull();
+    expect(back(plain)!.textContent).toBe('Back');
+  });
 });

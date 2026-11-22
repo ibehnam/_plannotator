@@ -24,6 +24,7 @@ import { OpenInAppButton } from './OpenInAppButton';
 import { HostTitle } from './HostTitle';
 import { useConfigValue } from '../config';
 import { repoLabel } from '../utils/repoLabel';
+import { HistoryStepButtons, RootJumpIcon, type HistorySteps } from './HistorySteps';
 
 export interface LinkedDocBadgeInfo {
   filepath: string;
@@ -33,7 +34,13 @@ export interface LinkedDocBadgeInfo {
   label?: string;
   backLabel?: string;
   variant?: 'breadcrumb' | 'folder-file';
+  /** A host that keeps its documents in the tab's history: Back and Forward,
+   *  each named after its page, ahead of the jump to the root (which then
+   *  shows a house, since Back steps). Absent → today's breadcrumb. */
+  steps?: HistorySteps | null;
 }
+
+const STEP_CLASS = 'px-1.5 py-0.5 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors flex min-w-0 max-w-[12rem] items-center gap-1';
 
 export interface DocBadgesProps {
   layout: 'column' | 'row' | 'header';
@@ -219,6 +226,7 @@ export const DocBadges: React.FC<DocBadgesProps> = ({
       {!isRow && linkedDocInfo && (
         linkedDocInfo.variant === 'folder-file' ? (
           <div className="flex min-w-0 max-w-full items-center gap-2">
+            <HistoryStepButtons steps={linkedDocInfo.steps} buttonClass={STEP_CLASS} />
             {linkedDocInfo.onBack && (
               <button
                 type="button"
@@ -238,23 +246,31 @@ export const DocBadges: React.FC<DocBadgesProps> = ({
           </div>
         ) : (
           <div className="flex min-w-0 max-w-full items-center gap-1.5">
+            <HistoryStepButtons steps={linkedDocInfo.steps} buttonClass={STEP_CLASS} />
             <button
               onClick={linkedDocInfo.onBack}
               className="px-1.5 py-0.5 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors flex flex-shrink-0 items-center gap-1"
+              {...(linkedDocInfo.steps !== undefined
+                ? { 'data-root-jump': '', title: `Go to ${linkedDocInfo.backLabel || 'plan'}` }
+                : {})}
             >
-              <svg
-                className="w-2.5 h-2.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-                />
-              </svg>
+              {linkedDocInfo.steps !== undefined ? (
+                <RootJumpIcon className="w-2.5 h-2.5" />
+              ) : (
+                <svg
+                  className="w-2.5 h-2.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
+                  />
+                </svg>
+              )}
               {linkedDocInfo.backLabel || 'plan'}
             </button>
             <span className="px-1.5 py-0.5 bg-primary/10 text-primary/80 rounded flex-shrink-0">

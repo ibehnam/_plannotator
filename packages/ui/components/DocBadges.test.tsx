@@ -195,4 +195,47 @@ describe('DocBadges open-in placement', () => {
 
     expect(exactText('refunds.md').title).toBe(filepath);
   });
+
+  // Back and Forward through the review's history beside the root jump: "Back to file" alone sent the reader to the
+  // root from any depth, and named the root "file".
+  test.skipIf(!hasDom)('Back and Forward are named after their pages, each only when it leads somewhere', async () => {
+    const steps: string[] = [];
+    await renderBadges({
+      linkedDocInfo: {
+        filepath: '/site/third.md',
+        onBack: () => steps.push('root'),
+        backLabel: 'index.md',
+        variant: 'breadcrumb',
+        steps: { back: { name: 'second.md', go: () => steps.push('back') }, forward: { name: 'fourth.md', go: () => steps.push('forward') } },
+      },
+    });
+    const back = host!.querySelector<HTMLButtonElement>('[data-history-back]')!;
+    const forward = host!.querySelector<HTMLButtonElement>('[data-history-forward]')!;
+    const rootJump = host!.querySelector<HTMLButtonElement>('[data-root-jump]')!;
+    expect(back.getAttribute('aria-label')).toBe('Back to second.md');
+    expect(back.textContent).toBe('second.md');
+    expect(forward.getAttribute('aria-label')).toBe('Forward to fourth.md');
+    expect(rootJump.textContent).toBe('index.md');
+    expect(appearsBefore(back, forward) && appearsBefore(forward, rootJump)).toBe(true);
+    await act(async () => { back.click(); forward.click(); rootJump.click(); });
+    expect(steps).toEqual(['back', 'forward', 'root']);
+    await act(async () => root!.unmount());
+    host?.remove();
+    await renderBadges({
+      linkedDocInfo: { filepath: '/site/second.md', onBack: () => {}, backLabel: 'index.md', variant: 'breadcrumb', steps: { back: null, forward: null } },
+    });
+    expect(host!.querySelector('[data-history-back]')).toBeNull();
+    expect(host!.querySelector('[data-history-forward]')).toBeNull();
+    expect(host!.querySelector('[data-root-jump]')!.textContent).toBe('index.md');
+  });
+
+  test.skipIf(!hasDom)('without steps (no history) the breadcrumb is as before: a Back arrow to the root', async () => {
+    await renderBadges({
+      linkedDocInfo: { filepath: '/site/second.md', onBack: () => {}, backLabel: 'index.md', variant: 'breadcrumb' },
+    });
+    expect(host!.querySelector('[data-history-back], [data-history-forward], [data-root-jump]')).toBeNull();
+    const button = host!.querySelector<HTMLButtonElement>('button')!;
+    expect(button.textContent).toBe('index.md');
+    expect(button.querySelector('path')!.getAttribute('d')).toBe('M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18');
+  });
 });
