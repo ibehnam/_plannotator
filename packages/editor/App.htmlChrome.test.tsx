@@ -2,14 +2,18 @@
  * HTML-surface chrome contract (DOM-gated).
  *
  * An HTML surface opens with the floating tools HIDDEN — the page gets the
- * whole viewport — and the header "Hide tools" eye (left of the pen) is what
- * reveals them. Hiding removes ALL floating chrome over the page from the
- * DOM: the sidebar tongue tabs and the comment/attachments cluster, with no
- * residual artifact. The toggle itself lives in the header, so the hidden
- * state (default, or restored from a cookie) always has a way back, and a
- * fresh cookie recording shown tools still wins over the default.
- * Sidebar/panel halves of the persisted state round-trip; the pen reports the
- * Interact/Annotate state, which opens in Interact.
+ * whole viewport — and the header "Hide tools" eye is what reveals them.
+ * Hiding removes ALL floating chrome over the page from the DOM: the sidebar
+ * tongue tabs and the comment/attachments cluster, with no residual artifact.
+ * The toggle itself lives in the header, so the hidden state (default, or
+ * restored from a cookie) always has a way back, and a fresh cookie recording
+ * shown tools still wins over the default. Sidebar/panel halves of the
+ * persisted state round-trip.
+ *
+ * The page has Markdown's toolstrip above it and no pen: its Select and
+ * Pinpoint are the one remembered choice every surface shares (Pinpoint arms
+ * the page), set by the toolstrip, the compact control, the Alt keys and
+ * Mod+Shift+A, and never by Escape.
  */
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import React, { act } from "react";
@@ -180,8 +184,13 @@ function findButtonByText(label: string): HTMLButtonElement | undefined {
     .find((button) => button.textContent?.trim() === label);
 }
 
-function penToggle(): HTMLButtonElement | null {
+/** Upstream's header pen, which the app no longer shows. */
+function pen(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>("[data-html-annotate-toggle]");
+}
+
+function htmlToolstrip(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-html-toolstrip]");
 }
 
 function toolsToggle(): HTMLButtonElement | null {
@@ -214,18 +223,18 @@ async function mountHtmlAnnotate(fetchImpl: typeof fetch = annotateFetch): Promi
   await act(async () => {
     root?.render(<App />);
   });
-  for (let attempt = 0; attempt < 20 && !penToggle(); attempt += 1) {
+  for (let attempt = 0; attempt < 20 && !htmlToolstrip(); attempt += 1) {
     await settle();
   }
-  if (!penToggle()) throw new Error("HTML surface did not finish mounting (pen toggle missing)");
+  if (!htmlToolstrip()) throw new Error("HTML surface did not finish mounting (toolstrip missing)");
 }
 
 function armedRing(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-annotate-armed-ring]");
 }
 
-/** Compact mounts wait on the page's frame: neither the pen nor the eye toggle
- * exists on the compact touch shell (that absence is what these tests guard). */
+/** Compact mounts wait on the page's frame: the eye toggle does not exist on
+ * the compact touch shell (that absence is what these tests guard). */
 async function mountCompactHtmlAnnotate(fetchImpl: typeof fetch = annotateFetch): Promise<void> {
   globalThis.fetch = fetchImpl;
   // SAFETY: the App only uses EventSource's constructor, handlers, and close.
@@ -277,7 +286,53 @@ afterAll(() => {
   resetStorageBackend();
 });
 
-describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
+// A toolstrip button holds its label twice (the visible one, and a hidden copy
+// that sizes it): the first span is the visible one.
+function toolstripButton(strip: ParentNode, label: string): HTMLButtonElement | undefined {
+  return Array.from(strip.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.querySelector("span")?.textContent === label);
+}
+
+function stripButton(label: string): HTMLButtonElement | undefined {
+  const strip = htmlToolstrip();
+  if (!strip) throw new Error("HTML toolstrip missing");
+  return toolstripButton(strip, label);
+}
+
+/** A Markdown document's toolstrip (the only one on its page). */
+function markdownStripButton(label: string): HTMLButtonElement | undefined {
+  return toolstripButton(document, label);
+}
+
+const markdownAnnotatePlan = {
+  plan: "# Notes\n\nSome body text.\n",
+  origin: "codex",
+  mode: "annotate",
+  filePath: "/tmp/notes.md",
+  sharingEnabled: false,
+  serverConfig: {},
+};
+
+async function mountMarkdownAnnotate(): Promise<void> {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+    if (url.pathname === "/api/plan") return Response.json(markdownAnnotatePlan);
+    return annotateFetch(input);
+  }) as typeof fetch;
+  // SAFETY: the App only uses EventSource's constructor, handlers, and close.
+  globalThis.EventSource = SilentEventSource as unknown as typeof EventSource;
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  root = createRoot(host);
+  await act(async () => {
+    root?.render(<App />);
+  });
+  for (let attempt = 0; attempt < 20 && !markdownStripButton("Pinpoint"); attempt += 1) {
+    await settle();
+  }
+  if (!markdownStripButton("Pinpoint")) throw new Error("the Markdown document did not finish mounting (toolstrip missing)");
+}
+
+describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select and Pinpoint)", () => {
   test("tools default HIDDEN: no tongue tabs or cluster, and the eye renders its hidden state", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
@@ -363,28 +418,31 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     expect(floatingCluster()).not.toBeNull();
   });
 
-  test("compact touch layout: annotate mode is armable through the Options menu (no pen, no keyboard needed)", async () => {
+  test("compact touch layout: the compact Select/Pinpoint control above the page arms it, and Options has no Annotate page", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     window.matchMedia = coarseMatchMedia as typeof window.matchMedia;
     await mountCompactHtmlAnnotate();
 
-    // The page opens in Interact, and the desktop pen is absent on compact —
-    // without the menu action a tap could never pin an element.
-    expect(penToggle()).toBeNull();
+    expect(pen()).toBeNull();
     expect(armedRing()).toBeNull();
-
     await openOptionsMenu();
-    const annotate = findMenuItem("Annotate page");
-    if (!annotate) throw new Error('compact menu is missing the "Annotate page" action');
-    await act(async () => annotate.click());
+    expect(findMenuItem("Annotate page")).toBeUndefined();
+    expect(findMenuItem("Interact with page")).toBeUndefined();
+
+    // The compact control Markdown has: its entry opens the two choices.
+    const choice = async (label: string) => {
+      const entry = document.querySelector<HTMLButtonElement>("[data-html-toolstrip] [data-pn-compact-annotate-entry]");
+      if (!entry) throw new Error("the compact Select/Pinpoint control is missing above the page");
+      await act(async () => entry.click());
+      const button = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-pn-compact-annotate-choices] button"))
+        .find((b) => b.textContent?.includes(label));
+      if (!button) throw new Error(`the compact control has no ${label} choice`);
+      await act(async () => button.click());
+    };
+    await choice("Pinpoint");
     expect(armedRing()).not.toBeNull();
-
-    // And back: the same slot disarms.
-    await openOptionsMenu();
-    const interact = findMenuItem("Interact with page");
-    if (!interact) throw new Error('compact menu is missing the "Interact with page" action');
-    await act(async () => interact.click());
+    await choice("Select text");
     expect(armedRing()).toBeNull();
   });
 
@@ -596,27 +654,101 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     expect(chip()).toBeNull();
   });
 
-  test("Mod+Shift+A toggles annotate mode in BOTH directions: it arms the Interact a page opens in, and is the way back in after Esc", async () => {
+  const pressModShiftA = async () => {
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "a", metaKey: true, shiftKey: true, bubbles: true,
+      }));
+    });
+  };
+
+  test("Mod+Shift+A switches the page between Select and Pinpoint, both ways", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
 
-    const press = async () => {
-      await act(async () => {
-        window.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "a", metaKey: true, shiftKey: true, bubbles: true,
-        }));
-      });
-    };
+    expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
+    await pressModShiftA();
+    expect(stripButton("Pinpoint")!.getAttribute("aria-pressed")).toBe("true");
+    expect(armedRing()).not.toBeNull();
+    await pressModShiftA();
+    expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
+    expect(armedRing()).toBeNull();
+  });
 
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
-    await press();
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
-    await press();
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
-    // The direction Esc cannot provide: the chord re-arms.
-    await press();
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
+  test("Mod+Shift+A switches a Markdown document's toolstrip too", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountMarkdownAnnotate();
+
+    expect(markdownStripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
+    await pressModShiftA();
+    expect(markdownStripButton("Pinpoint")!.getAttribute("aria-pressed")).toBe("true");
+    await pressModShiftA();
+    expect(markdownStripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("Escape with nothing open keeps Pinpoint, from the app and from inside the page", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountHtmlAnnotate();
+    await act(async () => stripButton("Pinpoint")!.click());
+    expect(armedRing()).not.toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    });
+    // What the bridge posts for an Escape inside the armed page.
+    const iframe = document.querySelector<HTMLIFrameElement>("iframe[srcdoc]");
+    if (!iframe?.contentWindow) throw new Error("HTML iframe missing");
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent("message", {
+        source: iframe.contentWindow,
+        data: { type: "plannotator-bridge-annotate-exit" },
+      }));
+    });
+
+    expect(stripButton("Pinpoint")!.getAttribute("aria-pressed")).toBe("true");
+    expect(armedRing()).not.toBeNull();
+  });
+
+  test("the choice is remembered: across a remount, and from a Markdown document to an HTML page", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountMarkdownAnnotate();
+    await act(async () => markdownStripButton("Pinpoint")!.click());
+    await unmountHtmlAnnotate();
+
+    await mountHtmlAnnotate();
+    expect(stripButton("Pinpoint")!.getAttribute("aria-pressed")).toBe("true");
+    expect(armedRing()).not.toBeNull();
+    await act(async () => stripButton("Select")!.click());
+    await unmountHtmlAnnotate();
+
+    await mountHtmlAnnotate();
+    expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
+    expect(armedRing()).toBeNull();
+  });
+
+  test("Alt held arms the page, and its release hands the clicks back", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountHtmlAnnotate();
+    expect(armedRing()).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", altKey: true, bubbles: true }));
+    });
+    expect(armedRing()).not.toBeNull();
+    // Past the hold threshold (useInputMethodSwitch: 300 ms), so the release reverts.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", bubbles: true }));
+    });
+    expect(armedRing()).toBeNull();
+    expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
   });
 
   test("Mod+Shift+X flips the tools, from the parent document and from inside the iframe", async () => {
@@ -654,33 +786,17 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     expect(toolsToggle()!.getAttribute("aria-pressed")).toBe("true");
   });
 
-  test("the pen toggle starts in Interact (aria-pressed false, no armed ring) on a static HTML session, and a click arms it", async () => {
+  test("no pen in the header: a fresh setup opens the page in Select", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
 
-    const pen = penToggle();
-    if (!pen) throw new Error("pen toggle missing");
-    expect(pen.getAttribute("aria-pressed")).toBe("false");
+    expect(pen()).toBeNull();
+    expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
     expect(armedRing()).toBeNull();
-
-    await act(async () => pen.click());
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).not.toBeNull();
-
-    await act(async () => penToggle()!.click());
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
   });
 
-  function stripButton(label: string): HTMLButtonElement | undefined {
-    const strip = document.querySelector("[data-html-toolstrip]");
-    if (!strip) throw new Error("HTML toolstrip missing");
-    // A toolstrip button holds its label twice (the visible one, and a hidden
-    // copy that sizes it): the first span is the visible one.
-    return Array.from(strip.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.querySelector("span")?.textContent === label);
-  }
-
-  test("an HTML page has the Markdown toolstrip above it: its Pinpoint arms the page and its Select disarms it, with the pen", async () => {
+  test("an HTML page has the Markdown toolstrip above it: its Pinpoint arms the page and its Select disarms it", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
@@ -691,10 +807,8 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     expect(armedRing()).toBeNull();
     await act(async () => stripButton("Pinpoint")!.click());
     expect(armedRing()).not.toBeNull();
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
     await act(async () => stripButton("Select")!.click());
     expect(armedRing()).toBeNull();
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
   });
 
   test("Shift+3 picks Redline on an HTML page as on a Markdown one, and the toolstrip shows it; Shift+1 returns to Markup", async () => {

@@ -141,7 +141,7 @@ import { buildDefaultPrompt, draftAnnotationsToSend, useAIChat } from '@plannota
 import { askScopeFromContext as askScopeFromContextFor } from './askScope';
 import { getUIPreferences, type UIPreferences, type PlanWidth } from '@plannotator/ui/utils/uiPreferences';
 import { getEditorMode, saveEditorMode } from '@plannotator/ui/utils/editorMode';
-import { getInputMethod, refreshInputMethodStamp, saveInputMethod } from '@plannotator/ui/utils/inputMethod';
+import { getInputMethod, saveInputMethod } from '@plannotator/ui/utils/inputMethod';
 import { getHtmlChromeState, mergeHtmlChromeState, saveHtmlChromeState, shouldRestoreHtmlChrome } from '@plannotator/ui/utils/htmlChrome';
 import {
   buildAnnotationDocumentGroups,
@@ -780,17 +780,7 @@ const App: React.FC = () => {
   // before a file is chosen.
   const [sessionFolderPath, setSessionFolderPath] = useState<string | null>(null);
   const [livePageUrl, setLivePageUrl] = useState('');
-  // Interact/Annotate mode for HTML and live-app surfaces. Armed = the bridge
-  // captures clicks for pinpoint annotation; disarmed (Interact) = clicks are
-  // fully native while committed markers stay visible/clickable and text
-  // drag-selection commenting stays live. Session-only, never persisted.
-  // BOTH surface kinds open in Interact, so a page's own controls answer its
-  // first click; Mod+Shift+A, the header pen or the Options menu arms it, and
-  // Esc drops back.
-  const [htmlAnnotateArmed, setHtmlAnnotateArmed] = useState(false);
-  const handleHtmlAnnotateToggle = useCallback(() => setHtmlAnnotateArmed((v) => !v), []);
   const handleHtmlToolsToggle = useCallback(() => setHtmlToolsHidden((v) => !v), []);
-  const handleHtmlAnnotateExit = useCallback(() => setHtmlAnnotateArmed(false), []);
   // Session-level force-markdown preference (`--markdown`). When set, folder/linked HTML
   // files are converted instead of rendered raw — threaded into /api/doc as &convert=1.
   const [convertHtml, setConvertHtml] = useState(false);
@@ -3923,36 +3913,21 @@ const App: React.FC = () => {
     saveEditorMode(mode);
   };
 
+  // Select or Pinpoint: one remembered choice on every surface. On an HTML or
+  // live-app page, Pinpoint arms the page (a click pins an element) and Select
+  // hands its clicks back to the page. The toolstrip, the compact control, the
+  // Alt keys and Mod+Shift+A all set it, and Escape never does.
   const handleInputMethodChange = (method: InputMethod) => {
-    // An HTML or live-app page's Select and Pinpoint are its Interact and
-    // Annotate: one state, set alike by the toolstrip, the Alt keys, the header
-    // pen and Mod+Shift+A, and never persisted (each page opens in Interact).
-    if (liveApp || isHtmlSurface) {
-      setHtmlAnnotateArmed(method === 'pinpoint');
-      return;
-    }
     if (isCompactTouchLayout) {
       setCompactInputMethod(method);
       return;
     }
     setInputMethod(method);
-    // Surface-scoped persistence: an explicit choice made on the HTML surface
-    // sticks for HTML sessions only; markdown keeps its own preference.
-    saveInputMethod(method, isHtmlSurface ? 'html' : 'markdown');
+    saveInputMethod(method);
   };
-
-  // Raw-HTML surfaces resolve their own input-method preference (default:
-  // Pinpoint — see utils/inputMethod.ts for the persistence decision). Applied
-  // whenever the surface flips (session load or linked-doc navigation), so a
-  // markdown-era "drag" cookie never suppresses the HTML default.
-  const prevSurfaceRef = useRef(isHtmlSurface);
-  useEffect(() => {
-    if (prevSurfaceRef.current === isHtmlSurface) return;
-    prevSurfaceRef.current = isHtmlSurface;
-    const method = getInputMethod(isHtmlSurface ? 'html' : 'markdown');
-    setInputMethod(method);
-    setCompactInputMethod(method);
-  }, [isHtmlSurface]);
+  const toggleInputMethod = () => handleInputMethodChange(effectiveInputMethod === 'pinpoint' ? 'drag' : 'pinpoint');
+  // An HTML or live-app page is armed in Pinpoint, never over a read-only one.
+  const pagePinpoint = !documentReadOnly && effectiveInputMethod === 'pinpoint';
 
   // Alt/Option key: hold to temporarily switch, double-tap to toggle
   useInputMethodSwitch(effectiveInputMethod, handleInputMethodChange);
@@ -3994,16 +3969,17 @@ const App: React.FC = () => {
     [canHandleDocumentChromeShortcut, htmlToolstripVisible, toolstripVisible],
   );
 
-  // Interact/Annotate toggle (Mod+Shift+A) and Show/Hide tools (Mod+Shift+X)
-  // — HTML and live-app surfaces only. The bridge mirrors both chords inside
-  // the iframe and forwards them, so this parent-side registration covers
-  // focus living in the editor chrome. The tools chord is NOT gated on
-  // documentReadOnly: the eye renders on read-only documents too.
+  // Select/Pinpoint (Mod+Shift+A) on every surface, beside the Alt keys, and
+  // Show/Hide tools (Mod+Shift+X) on HTML and live-app surfaces. The bridge
+  // mirrors both chords inside the iframe and forwards them, so this
+  // parent-side registration covers focus living in the editor chrome. The
+  // tools chord is NOT gated on documentReadOnly: the eye renders on read-only
+  // documents too.
   useHtmlAnnotateShortcuts({
     handlers: {
       toggleAnnotateMode: {
-        when: (event) => isHtmlSurface && !documentReadOnly && canHandleDocumentChromeShortcut(event),
-        handle: handleHtmlAnnotateToggle,
+        when: (event) => !documentReadOnly && canHandleDocumentChromeShortcut(event),
+        handle: toggleInputMethod,
       },
       toggleTools: {
         when: (event) => isHtmlSurface && canHandleDocumentChromeShortcut(event),
@@ -4077,8 +4053,8 @@ const App: React.FC = () => {
           // proxy origin. No rawHtml, no version fields, no sharing.
           setRenderAs('html');
           setMarkdown('');
-          // Live sessions open in Interact like every HTML surface
-          // (htmlAnnotateArmed defaults false): Mod+Shift+A arms pinpoint.
+          // Live sessions take the remembered Select or Pinpoint, as every
+          // surface does.
           setLiveApp({
             appUrl: data.appUrl,
             origin: new URL(data.appUrl).origin,
@@ -5138,14 +5114,11 @@ const App: React.FC = () => {
         afterSelection: selectionRef.current,
       });
     }
-    // Annotation activity keeps the HTML-surface preferences alive: re-stamp
-    // the input method and chrome records so they only expire for users who
-    // have not annotated HTML within the staleness TTL (see preferenceTtl.ts).
-    if (isHtmlSurface) {
-      refreshInputMethodStamp(inputMethod);
-      if (htmlChromeRestoredRef.current) {
-        saveChrome();
-      }
+    // Annotation activity keeps the HTML-surface chrome record alive: re-stamp
+    // it so it only expires for users who have not annotated HTML within the
+    // staleness TTL (see preferenceTtl.ts).
+    if (isHtmlSurface && htmlChromeRestoredRef.current) {
+      saveChrome();
     }
   };
 
@@ -7149,21 +7122,11 @@ const App: React.FC = () => {
               onSelect: handleLinkedDocBack,
             }]
           : []),
-        // HTML/live surfaces on the compact touch shell: the desktop pen and
-        // eye toggles are header-only and hidden here, and Mod+Shift+A is
-        // keyboard-only, so without these menu actions a touch user has NO
-        // way to disarm annotate mode (every tap annotates, the page beneath
-        // is unreachable) or to bring hidden tools back.
-        ...(isHtmlSurface && !documentReadOnly
-          ? [{
-              id: 'annotate' as const,
-              label: htmlAnnotateArmed ? 'Interact with page' : 'Annotate page',
-              subtitle: htmlAnnotateArmed
-                ? 'Taps annotate. Switch to use the page itself.'
-                : 'Taps use the page. Switch to add annotations.',
-              onSelect: handleHtmlAnnotateToggle,
-            }]
-          : []),
+        // HTML/live surfaces on the compact touch shell: the desktop eye toggle
+        // is header-only and hidden here, and Mod+Shift+X is keyboard-only, so
+        // without this menu action a touch user has NO way to bring hidden
+        // tools back. Select and Pinpoint are the compact control above the
+        // page, as on Markdown.
         ...(isHtmlSurface
           ? [{
               id: 'tools' as const,
@@ -7653,8 +7616,6 @@ const App: React.FC = () => {
         <AppHeader
           sticky={!usesDocumentScroll}
           htmlSurface={isHtmlSurface}
-          htmlAnnotateArmed={htmlAnnotateArmed}
-          onToggleHtmlAnnotate={isHtmlSurface && !documentReadOnly ? handleHtmlAnnotateToggle : undefined}
           htmlToolsHidden={htmlToolsHidden}
           onToggleHtmlTools={isHtmlSurface ? handleHtmlToolsToggle : undefined}
           canRefreshHtml={htmlRefresh.canRefresh}
@@ -8153,22 +8114,22 @@ const App: React.FC = () => {
                     onSelectAnnotation={handleSelectAnnotation}
                     selectedAnnotationId={selectedAnnotationId}
                     mode={effectiveEditorMode}
-                    // The bridge's pinpoint machinery serves both states:
-                    // armed (the toolstrip's Pinpoint) pins an element on a
-                    // click, and a drag selects text in both; Interact (its
-                    // Select) keeps clicks native.
+                    // The bridge's pinpoint machinery serves both of the
+                    // remembered choices: Pinpoint arms the page (a click pins
+                    // an element), Select keeps clicks native, and a drag
+                    // selects text in both.
                     inputMethod="pinpoint"
-                    annotateModeActive={htmlAnnotateArmed}
+                    annotateModeActive={pagePinpoint}
                     header={htmlToolstripVisible ? (
                       <div data-print-hide data-html-toolstrip className="w-full flex items-center justify-start px-3 py-2">
                         {isCompactTouchLayout ? (
                           <CompactAnnotationControls
-                            inputMethod={htmlAnnotateArmed ? 'pinpoint' : 'drag'}
+                            inputMethod={effectiveInputMethod}
                             onInputMethodChange={handleInputMethodChange}
                           />
                         ) : (
                           <AnnotationToolstrip
-                            inputMethod={htmlAnnotateArmed ? 'pinpoint' : 'drag'}
+                            inputMethod={effectiveInputMethod}
                             onInputMethodChange={handleInputMethodChange}
                             mode={editorMode}
                             onModeChange={handleEditorModeChange}
@@ -8183,13 +8144,14 @@ const App: React.FC = () => {
                       const mode = annotationModeForDigit(digit);
                       if (mode) handleEditorModeChange(mode);
                     } : undefined}
-                    onAnnotateModeExit={documentReadOnly ? undefined : handleHtmlAnnotateExit}
-                    onAnnotateModeToggle={documentReadOnly ? undefined : handleHtmlAnnotateToggle}
+                    // Mod+Shift+A from inside the iframe; no Escape leaves
+                    // Pinpoint (no onAnnotateModeExit), as on Markdown.
+                    onAnnotateModeToggle={documentReadOnly ? undefined : toggleInputMethod}
                     // Mod+Shift+X from inside the iframe. Offered on read-only
                     // documents too: the eye is not a document mutation.
                     onToolsToggle={handleHtmlToolsToggle}
-                    vimModeEnabled={liveApp ? false : vimModeEnabled && htmlAnnotateArmed}
-                    vimHudEnabled={!liveApp && vimModeEnabled && htmlAnnotateArmed && vimHudEnabled}
+                    vimModeEnabled={liveApp ? false : vimModeEnabled && pagePinpoint}
+                    vimHudEnabled={!liveApp && vimModeEnabled && pagePinpoint && vimHudEnabled}
                     vimHudKeyPanelEnabled={vimHudKeyPanelEnabled}
                     onVimHudKeyPanelChange={handleVimHudKeyPanelChange}
                     globalAttachments={globalAttachments}

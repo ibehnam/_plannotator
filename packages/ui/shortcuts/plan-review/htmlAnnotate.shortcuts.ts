@@ -1,11 +1,12 @@
 import { defineShortcutScope } from '../core';
 import { createShortcutScopeHook } from '../runtime';
 
-// Chords for the HTML and live-app annotate surfaces. Both are mirrored inside
-// the sandboxed iframe by the bridge (focus usually lives in there on live
-// apps) and forwarded to the parent, so they work regardless of which document
-// owns the keyboard. No bare-letter binding: bare letters belong to
-// type-to-comment and the page itself.
+// Mod+Shift+A switches Select and Pinpoint on every surface (beside Alt hold
+// and Alt Alt); Mod+Shift+X shows or hides the tools over an HTML or live-app
+// page. Both are mirrored inside the sandboxed iframe by the bridge (focus
+// usually lives in there on live apps) and forwarded to the parent, so they
+// work regardless of which document owns the keyboard. No bare-letter binding:
+// bare letters belong to type-to-comment and the page itself.
 //
 // `Mod+Shift+X` for the tools rather than a mnemonic letter: every mnemonic
 // candidate is claimed by a browser (H = Chrome's Home / Firefox's history
@@ -17,10 +18,10 @@ export const htmlAnnotateShortcuts = defineShortcutScope({
   title: 'HTML Annotate',
   shortcuts: {
     toggleAnnotateMode: {
-      description: 'Toggle annotate mode',
+      description: 'Switch between Select and Pinpoint',
       bindings: ['Mod+Shift+A'],
       section: 'Annotations',
-      hint: 'On HTML and live app surfaces: arm annotation capture, or hand clicks back to the page. Esc also exits Annotate; this chord is the way back in.',
+      hint: 'On every document, as Alt hold and Alt Alt do. On an HTML page or a live app, Pinpoint takes clicks for comments and Select hands them back to the page.',
       preventDefault: true,
       displayOrder: 0,
     },
