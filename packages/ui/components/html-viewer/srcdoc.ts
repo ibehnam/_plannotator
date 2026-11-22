@@ -374,16 +374,38 @@ export function injectNoNetworkCsp(html: string): string {
 }
 
 /**
+ * What a host offers one load of a page; the sandbox shim reads it before any
+ * page script runs (`sandboxShim.ts`). `storage`: the items the page's
+ * `localStorage` and `sessionStorage` start with, as `[key, value]` pairs, and
+ * the most all of them may hold together, each counted as its key, its value
+ * and `perItem`.
+ */
+export interface SandboxShimOffer {
+  storage?: { local: Array<[string, string]>; session: Array<[string, string]>; limit: number; perItem: number };
+}
+
+/** The script handing OFFER to the shim: its JSON with `<`, U+2028 and U+2029 escaped, so no value ends the script. */
+function sandboxShimOfferScript(offer: SandboxShimOffer): string {
+  const json = JSON.stringify(offer)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `<script>window.__plannotatorFrameHost = ${json};</script>`;
+}
+
+/**
  * The sandbox shim (`sandboxShim.ts`) ahead of every page script, so a page's
  * own head scripts already find history and storage safe to use: at the start
  * of `<head>` (or after the doctype when there is none), or just before a
  * script that comes ahead of `<head>`. The bridge, at the end of `<head>`,
- * runs it again, which then does nothing.
+ * runs it again, which then does nothing. A host's OFFER goes right before
+ * it; with none, the shim alone.
  */
-export function injectSandboxShim(html: string): string {
+export function injectSandboxShim(html: string, offer?: SandboxShimOffer): string {
   const { position, firstScript } = headStart(html);
   const at = firstScript ?? position;
-  return `${html.slice(0, at)}<script>${SANDBOX_SHIM_SCRIPT}</script>${html.slice(at)}`;
+  const host = offer ? sandboxShimOfferScript(offer) : "";
+  return `${html.slice(0, at)}${host}<script>${SANDBOX_SHIM_SCRIPT}</script>${html.slice(at)}`;
 }
 
 /**

@@ -278,6 +278,7 @@ import { useLiveAnnotateVersion, type LiveAnnotateVersion } from './hooks/useLiv
 import { useHtmlRefresh, type HtmlRefreshedDocument } from './hooks/useHtmlRefresh';
 import { useAnnotationJump } from './hooks/useAnnotationJump';
 import { useDocumentHistory, type DocumentHistory } from './hooks/useDocumentHistory';
+import { createFrameStorage } from './frameStorage';
 import { planRevisionBlocker, usePlanRevisions, type PlanRevisionSnapshot } from './hooks/usePlanRevisions';
 import { AgentNudgeBanner } from './components/AgentNudgeBanner';
 import { useDocumentWebMcp } from './webmcp/useDocumentWebMcp';
@@ -5501,6 +5502,8 @@ const App: React.FC = () => {
     opensFromAddress: (path) => isAnnotatableDocPath(path, getExtraMarkdownExtensions()),
   });
   documentHistoryRef.current = documentHistory;
+  // The review's pages keep their storage in this tab for the review (frameStorage.ts).
+  const frameStorage = useMemo(() => createFrameStorage(), []);
 
   const jumpToAnnotation = useAnnotationJump({
     currentPath: currentDocumentPath,
@@ -8120,6 +8123,7 @@ const App: React.FC = () => {
                     }
                     onUnanchoredChange={htmlRefresh.reportAnnotationRestore}
                     readOnly={documentReadOnly}
+                    frameStorage={liveApp ? undefined : frameStorage}
                   />
                 ) : isEditingMarkdown ? (
                   <MarkdownEditor
