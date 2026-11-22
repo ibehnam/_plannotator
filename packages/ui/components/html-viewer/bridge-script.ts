@@ -5151,17 +5151,23 @@ ${SANDBOX_SHIM_SCRIPT}
       postToParent({ type: PREFIX + 'page-escape' });
     }, 0);
   }
+  // The Escape that closes a draft is used (one Escape, one rung), so a host
+  // the page's unused keys are handed to does not run its own ladder for it.
+  function closeDraftWith(e) {
+    e.preventDefault();
+    closePendingDraft();
+  }
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape' || vimEnabled) return;
     if (!annotateModeActive) {
       // Interact mode: Esc belongs to the page — except an open drag-comment
       // draft (drag-selection stays live in Interact) still closes first.
-      if (pendingSelection) closePendingDraft();
+      if (pendingSelection) closeDraftWith(e);
       else offerUnusedEscape(e);
       return;
     }
     if (pendingSelection) {
-      closePendingDraft();
+      closeDraftWith(e);
     } else {
       // Hover-clear is NOT a rung: the hover outline is a pointer
       // affordance, not a state the user perceives as a step, so clearing
