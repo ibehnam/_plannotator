@@ -87,7 +87,7 @@
   releases came after it.
 - `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
   the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' twenty-six suites in upstream's test sandbox (`--full`: every unit
+  `bun run typecheck` and the patches' twenty-seven suites in upstream's test sandbox (`--full`: every unit
   suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
   on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
   a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.
