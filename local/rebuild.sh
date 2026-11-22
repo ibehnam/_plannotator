@@ -44,6 +44,9 @@ suites=(
   packages/ui/hooks/useVimSelection.test.tsx
   packages/ui/components/Viewer.vimMode.integration.test.tsx
   packages/editor/App.htmlChrome.test.tsx
+  packages/server/close-tab.test.ts
+  packages/ui/hooks/useAutoClose.test.tsx
+  packages/ui/utils/annotationModes.test.ts
 )
 # Files upstream's sandbox refuses to run (scripts/test-sandbox.ts REFUSED).
 refused=(apps/pi-extension/inbox.test.ts tests/never-touch-the-real-inbox.test.ts)
