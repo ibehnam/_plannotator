@@ -32,13 +32,9 @@ interface AppHeaderProps {
   /** Mobile document-scroll surfaces let Safari own the top edge and scroll
    * this header with the page. Desktop keeps the incumbent sticky header. */
   sticky?: boolean;
-  /** HTML annotate surface (raw HTML or live app): shows the pen toggle. */
+  /** HTML annotate surface (raw HTML or live app): shows its controls. Its
+   *  Select and Pinpoint are the toolstrip's, as on Markdown, so no pen. */
   htmlSurface?: boolean;
-  /** Interact/Annotate toggle for HTML and live-app surfaces: armed means
-   *  clicks annotate; unarmed hands the page back its native interaction
-   *  (text drag-selection commenting stays live either way). */
-  htmlAnnotateArmed?: boolean;
-  onToggleHtmlAnnotate?: () => void;
   /** Floating tools (sidebar tongue tabs + comment/attachments cluster) are
    *  fully removed from the DOM while hidden; this button is the way back. */
   htmlToolsHidden?: boolean;
@@ -191,8 +187,6 @@ interface AppHeaderProps {
 export const AppHeader = React.memo<AppHeaderProps>(({
   sticky = true,
   htmlSurface,
-  htmlAnnotateArmed,
-  onToggleHtmlAnnotate,
   htmlToolsHidden,
   onToggleHtmlTools,
   canRefreshHtml,
@@ -428,17 +422,16 @@ export const AppHeader = React.memo<AppHeaderProps>(({
         )}
 
         {/* HTML and live-app surfaces only: back (while a linked document is
-            open), the eye (show/hide tools, the only way back from hidden),
-            the refresh, and the Interact/Annotate pen, in that order. The
-            published control carries the markup; the compact touch shell
-            offers the same actions in its Options menu instead
-            (compactDocumentActions in App: Back to <file>, Show/Hide tools,
-            Interact/Annotate, Refresh from disk). */}
-        {htmlSurface && (onToggleHtmlTools || onToggleHtmlAnnotate || onHtmlLinkedDocBack) && (
+            open), the eye (show/hide tools, the only way back from hidden) and
+            the refresh, in that order. No pen: Select and Pinpoint are the
+            toolstrip's above the page. The published control carries the
+            markup; the compact touch shell offers the same actions in its
+            Options menu instead (compactDocumentActions in App: Back to
+            <file>, Show/Hide tools, Refresh from disk). */}
+        {htmlSurface && (onToggleHtmlTools || onHtmlLinkedDocBack) && (
           <HtmlSurfaceControls
             compact={compactTouchLayout}
-            armed={!!htmlAnnotateArmed}
-            onToggleArmed={onToggleHtmlAnnotate}
+            armed={false}
             toolsHidden={!!htmlToolsHidden}
             onToggleTools={onToggleHtmlTools}
             canRefresh={!!canRefreshHtml && !!onRefreshHtml}

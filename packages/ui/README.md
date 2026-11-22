@@ -278,8 +278,8 @@ The srcdoc then carries one classic `<script src>` in the exact place the inline
 
 #### Also blessed in 0.32.0: `shortcuts` and `utils/inputMethod`
 
-- **`@plannotator/ui/shortcuts`**: the declarative keyboard-shortcut engine (`defineShortcutScope`, `useShortcutScope`) and the per-surface scopes, including `useHtmlAnnotateShortcuts` for the Mod+Shift+A Annotate/Interact chord on HTML surfaces. Pure React plus `utils/platform`; no backend.
-- **`@plannotator/ui/utils/inputMethod`**: `getInputMethod(surface)` / `saveInputMethod(method, surface)` / `refreshInputMethodStamp(method)`, the per-surface pinpoint-or-drag preference with its TTL, persisted through the `storageBackend` seam.
+- **`@plannotator/ui/shortcuts`**: the declarative keyboard-shortcut engine (`defineShortcutScope`, `useShortcutScope`) and the per-surface scopes, including `useHtmlAnnotateShortcuts` for the Mod+Shift+A chord that switches Select and Pinpoint. Pure React plus `utils/platform`; no backend.
+- **`@plannotator/ui/utils/inputMethod`**: `getInputMethod()` / `saveInputMethod(method)`, the pinpoint-or-drag preference, one remembered choice for every surface, persisted through the `storageBackend` seam.
 
 #### Toolstrip host props (0.35.0)
 

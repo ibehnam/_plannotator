@@ -1,16 +1,12 @@
 /**
- * Pinpoint default resolution for the raw-HTML annotate surface (DOM-gated).
+ * Select or Pinpoint: one remembered choice (DOM-gated).
  *
- * Decision under test: HTML sessions keep a SEPARATE input-method preference
- * from markdown sessions. First-ever HTML session defaults to Pinpoint even
- * when a markdown-era "drag" cookie exists; an explicit choice made inside an
- * HTML session persists for later HTML sessions only, and only while the user
- * keeps annotating HTML: a record older than the staleness TTL (or a legacy
- * record with no timestamp) expires back to Pinpoint.
+ * Every surface reads and writes the same preference, so a choice made on a
+ * Markdown document holds on the next HTML page or live app, and back. A fresh
+ * setup opens in Select. The retired HTML-only record is never read.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { resetStorageBackend, setStorageBackend, type StorageBackend } from './storage';
-import { STALE_PREFERENCE_TTL_MS } from './preferenceTtl';
 
 const hasDom = typeof document !== 'undefined';
 const inputMethodModule = hasDom ? await import('./inputMethod') : null;
@@ -34,90 +30,42 @@ afterAll(() => {
   resetStorageBackend();
 });
 
-const NOW = 1_800_000_000_000;
-const fresh = (m: string, age = 0) => JSON.stringify({ m, savedAt: NOW - age });
-
 describe.if(hasDom)('resolveInputMethod (pure)', () => {
   test('a stored "word" (a method that became part of Select) reads as drag', () => {
-    expect(inputMethodModule!.resolveInputMethod('markdown', 'word', null, NOW)).toBe('drag');
-    expect(inputMethodModule!.resolveInputMethod('html', null, fresh('word'), NOW)).toBe('drag');
+    expect(inputMethodModule!.resolveInputMethod('word')).toBe('drag');
   });
 
-  test('HTML surface with nothing saved defaults to pinpoint', () => {
-    expect(inputMethodModule!.resolveInputMethod('html', null, null, NOW)).toBe('pinpoint');
+  test('nothing saved opens in Select', () => {
+    expect(inputMethodModule!.resolveInputMethod(null)).toBe('drag');
   });
 
-  test('markdown surface with nothing saved keeps the drag default', () => {
-    expect(inputMethodModule!.resolveInputMethod('markdown', null, null, NOW)).toBe('drag');
+  test('a saved choice wins, with no expiry', () => {
+    expect(inputMethodModule!.resolveInputMethod('pinpoint')).toBe('pinpoint');
+    expect(inputMethodModule!.resolveInputMethod('drag')).toBe('drag');
   });
 
-  test('a markdown-era saved preference never suppresses the HTML default', () => {
-    expect(inputMethodModule!.resolveInputMethod('html', 'drag', null, NOW)).toBe('pinpoint');
-  });
-
-  test('an explicit recent HTML-session choice wins over the HTML default', () => {
-    expect(inputMethodModule!.resolveInputMethod('html', null, fresh('drag'), NOW)).toBe('drag');
-    expect(inputMethodModule!.resolveInputMethod('html', 'pinpoint', fresh('drag'), NOW)).toBe('drag');
-  });
-
-  test('an HTML choice older than the TTL expires back to pinpoint', () => {
-    const stale = fresh('drag', STALE_PREFERENCE_TTL_MS + 1);
-    expect(inputMethodModule!.resolveInputMethod('html', null, stale, NOW)).toBe('pinpoint');
-    // Just inside the TTL still honors the choice.
-    const inside = fresh('drag', STALE_PREFERENCE_TTL_MS - 1);
-    expect(inputMethodModule!.resolveInputMethod('html', null, inside, NOW)).toBe('drag');
-  });
-
-  test('a legacy plain-string HTML record (no timestamp) is treated as expired', () => {
-    expect(inputMethodModule!.resolveInputMethod('html', null, 'drag', NOW)).toBe('pinpoint');
-  });
-
-  test('HTML choice never leaks into markdown resolution', () => {
-    expect(inputMethodModule!.resolveInputMethod('markdown', null, fresh('pinpoint'), NOW)).toBe('drag');
-    expect(inputMethodModule!.resolveInputMethod('markdown', 'pinpoint', fresh('drag'), NOW)).toBe('pinpoint');
-  });
-
-  test('the markdown preference deliberately has no TTL', () => {
-    expect(inputMethodModule!.resolveInputMethod('markdown', 'pinpoint', null, NOW)).toBe('pinpoint');
-  });
-
-  test('garbage saved values fall back to the surface default', () => {
-    expect(inputMethodModule!.resolveInputMethod('html', 'bogus', 'bogus', NOW)).toBe('pinpoint');
-    expect(inputMethodModule!.resolveInputMethod('html', null, '{"m":"bogus","savedAt":' + NOW + '}', NOW)).toBe('pinpoint');
-    expect(inputMethodModule!.resolveInputMethod('html', null, '{"m":"drag","savedAt":"soon"}', NOW)).toBe('pinpoint');
-    expect(inputMethodModule!.resolveInputMethod('markdown', 'bogus', 'bogus', NOW)).toBe('drag');
+  test('garbage saved values fall back to Select', () => {
+    expect(inputMethodModule!.resolveInputMethod('bogus')).toBe('drag');
+    expect(inputMethodModule!.resolveInputMethod('{"m":"pinpoint","savedAt":1}')).toBe('drag');
   });
 });
 
 describe.if(hasDom)('getInputMethod / saveInputMethod (cookie round trip)', () => {
-  test('first run: HTML resolves pinpoint, markdown resolves drag', () => {
-    expect(inputMethodModule!.getInputMethod('html')).toBe('pinpoint');
-    expect(inputMethodModule!.getInputMethod('markdown')).toBe('drag');
+  test('first run resolves Select', () => {
     expect(inputMethodModule!.getInputMethod()).toBe('drag');
   });
 
-  test('saving on the HTML surface persists (timestamped) for HTML only', () => {
-    inputMethodModule!.saveInputMethod('drag', 'html');
-    expect(inputMethodModule!.getInputMethod('html')).toBe('drag');
-    expect(inputMethodModule!.getInputMethod('markdown')).toBe('drag');
+  test('a saved choice is read back, from one key', () => {
+    inputMethodModule!.saveInputMethod('pinpoint');
+    expect(memory.get('plannotator-input-method')).toBe('pinpoint');
+    expect(inputMethodModule!.getInputMethod()).toBe('pinpoint');
 
-    inputMethodModule!.saveInputMethod('pinpoint', 'html');
-    expect(inputMethodModule!.getInputMethod('html')).toBe('pinpoint');
-    expect(inputMethodModule!.getInputMethod('markdown')).toBe('drag');
+    inputMethodModule!.saveInputMethod('drag');
+    expect(inputMethodModule!.getInputMethod()).toBe('drag');
   });
 
-  test('refreshInputMethodStamp re-stamps the HTML record', () => {
-    inputMethodModule!.refreshInputMethodStamp('drag');
-    const raw = memory.get('plannotator-input-method-html');
-    expect(raw).toBeTruthy();
-    const record = JSON.parse(raw!) as { m: string; savedAt: number };
-    expect(record.m).toBe('drag');
-    expect(typeof record.savedAt).toBe('number');
-  });
-
-  test('saving on the markdown surface leaves the HTML default intact', () => {
-    inputMethodModule!.saveInputMethod('drag', 'markdown');
-    expect(inputMethodModule!.getInputMethod('markdown')).toBe('drag');
-    expect(inputMethodModule!.getInputMethod('html')).toBe('pinpoint');
+  test('the retired HTML-only record is never read', () => {
+    memory.set('plannotator-input-method-html', JSON.stringify({ m: 'pinpoint', savedAt: Date.now() }));
+    expect(inputMethodModule!.getInputMethod()).toBe('drag');
   });
 });
