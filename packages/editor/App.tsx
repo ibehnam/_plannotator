@@ -1765,14 +1765,23 @@ const App: React.FC = () => {
     setIsPanelOpen(false);
   }, [canUseWideMode, hideAgentTerminal, isAgentTerminalOpen, isPanelOpen, wideModeType, sidebar.activeTab, sidebar.close, sidebar.isOpen]);
 
+  // The reader's own Wide/Focus choice in an annotate session is the next
+  // review's view too (settings' `annotateViewChoice`): set by the toolbar
+  // and the shortcut only, cleared when they turn it off.
+  const rememberViewChoice = useCallback((choice: WideModeType | null) => {
+    if (annotateMode) configStore.set('annotateViewChoice', choice);
+  }, [annotateMode]);
+
   const toggleViewMode = useCallback((type: WideModeType) => {
     annotateOpenViewSettledRef.current = true;
     if (wideModeType === type) {
       exitWideMode();
+      rememberViewChoice(null);
     } else {
       enterViewMode(type);
+      rememberViewChoice(type);
     }
-  }, [enterViewMode, exitWideMode, wideModeType]);
+  }, [enterViewMode, exitWideMode, rememberViewChoice, wideModeType]);
 
   useEffect(() => {
     if (!canUseWideMode && wideModeType !== null) {
@@ -1866,9 +1875,14 @@ const App: React.FC = () => {
       canUseWideMode: canUseWideMode && !isHtmlSurface,
       wideModeType,
     });
-    if (action === 'enter-focus') enterViewMode('focus');
-    else if (action === 'exit') exitWideMode();
-  }, [canUseWideMode, enterViewMode, exitWideMode, isHtmlSurface, wideModeType]);
+    if (action === 'enter-focus') {
+      enterViewMode('focus');
+      rememberViewChoice('focus');
+    } else if (action === 'exit') {
+      exitWideMode();
+      rememberViewChoice(null);
+    }
+  }, [canUseWideMode, enterViewMode, exitWideMode, isHtmlSurface, rememberViewChoice, wideModeType]);
 
   useDocumentViewShortcuts({
     handlers: {
@@ -3378,14 +3392,16 @@ const App: React.FC = () => {
   handleEditToggleRef.current = handleEditToggle;
 
   // Open the annotate session in its configured view (config.json
-  // `annotateView`), once. A view the toolbar does not offer here falls back
+  // `annotateView`, else the view the reader last chose), once. A view the
+  // toolbar does not offer here falls back
   // to today's default; Edit also waits for the saved-draft lookup and stays
   // off when a draft is offered, so restoring it is never refused.
   useEffect(() => {
     if (annotateOpenViewSettledRef.current || isLoading || !isApiMode) return;
     if (configuredAnnotateView === 'edit' && !draftChecked) return;
     annotateOpenViewSettledRef.current = true;
-    const view = resolveAnnotateOpenView(configuredAnnotateView, {
+    // config.json's view when set, else the reader's last Wide/Focus choice.
+    const view = resolveAnnotateOpenView(configuredAnnotateView ?? configStore.get('annotateViewChoice'), {
       toolbarShown: annotateMode && !isCompactTouchLayout && !isPlanDiffActive && !archive.archiveMode && !isHtmlSurface
         && !goalSetupMode && !(annotateSource === 'folder' && !markdown && !linkedDocHook.isActive),
       canUseWideMode,

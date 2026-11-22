@@ -409,6 +409,27 @@ export const SETTINGS = {
   //
   // 'commits' is never recorded here for the same reason reviewPanelView
   // rejects it: the Commits view is session-only and never an opening view.
+  /**
+   * The Wide or Focus view the reader last chose in an annotate session with
+   * the document toolbar or its shortcut, so the next review opens in it;
+   * none once they turn it off. Other exits (a sidebar tab opened by hand, a
+   * diff) leave it. config.json's `annotateView` wins when set (the one view
+   * an author pins on purpose; nothing writes it). Cookie-only: cookies on
+   * localhost reach every port, so every later review reads it.
+   */
+  annotateViewChoice: {
+    defaultValue: null as 'wide' | 'focus' | null,
+    fromCookie: () => {
+      const v = storage.getItem('plannotator-annotate-view-choice');
+      return v === 'wide' || v === 'focus' ? v : undefined;
+    },
+    toCookie: (v: 'wide' | 'focus' | null) => {
+      if (v === 'wide' || v === 'focus') storage.setItem('plannotator-annotate-view-choice', v);
+      else storage.removeItem('plannotator-annotate-view-choice');
+    },
+    serverKey: undefined, fromServer: undefined, toServer: undefined,
+  },
+
   reviewPanelViewLastUsed: {
     defaultValue: null as 'sections' | 'tree' | null,
     fromCookie: () => {
