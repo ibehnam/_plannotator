@@ -1,10 +1,10 @@
 /**
  * The Alt keys' switch between Select and Pinpoint (DOM-gated): held, the
  * other method until release; tapped twice, the other method for good. Only a
- * lone Alt counts: Alt in a chord (a Hyper key, Cmd+Ctrl+Opt+Shift, that
- * Karabiner makes of Caps Lock; Alt+1 for a quick label) never switches, in
- * whatever order the chord's keys arrive. A tap's revert outlives the
- * component's renders in between.
+ * lone Alt counts: Alt in a chord (a Hyper key, Cmd+Ctrl+Opt held and Escape
+ * tapped alone, that Karabiner makes of Caps Lock; Alt+1 for a quick label)
+ * never switches, in whatever order the chord's keys arrive. A tap's revert
+ * outlives the component's renders in between.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import React, { act, useState } from 'react';
@@ -94,24 +94,26 @@ describe.if(hasDom)('useInputMethodSwitch', () => {
 
   test('Alt in a Hyper chord never switches, its modifiers in either order', async () => {
     await mount();
-    // Karabiner's order: Cmd, Ctrl, Opt, Shift down, then up, then Escape when alone.
-    await key('keydown', 'Meta', { metaKey: true });
-    await key('keydown', 'Control', { metaKey: true, ctrlKey: true });
-    await key('keydown', 'Alt', { metaKey: true, ctrlKey: true, altKey: true });
-    await key('keydown', 'Shift', { metaKey: true, ctrlKey: true, altKey: true, shiftKey: true });
-    await key('keyup', 'Shift', { metaKey: true, ctrlKey: true, altKey: true });
-    await key('keyup', 'Alt', { metaKey: true, ctrlKey: true });
-    await key('keyup', 'Control', { metaKey: true });
-    await key('keyup', 'Meta');
+    // Karabiner's Hyper here: Caps Lock is left_command with left_control and
+    // left_option held, and Escape when tapped alone. The modifiers first,
+    // then Cmd; released, then Escape.
+    await key('keydown', 'Control', { ctrlKey: true });
+    await key('keydown', 'Alt', { ctrlKey: true, altKey: true });
+    await key('keydown', 'Meta', { ctrlKey: true, altKey: true, metaKey: true });
+    await key('keyup', 'Meta', { ctrlKey: true, altKey: true });
+    await key('keyup', 'Alt', { ctrlKey: true });
+    await key('keyup', 'Control');
     await key('keydown', 'Escape');
     await key('keyup', 'Escape');
-    // Alt first: the rest of the chord follows within a moment.
+    // Alt first, with nothing else held yet: the rest follows within a moment.
     await key('keydown', 'Alt', { altKey: true });
-    await key('keydown', 'Meta', { altKey: true, metaKey: true });
-    await key('keydown', 'Shift', { altKey: true, metaKey: true, shiftKey: true });
-    await key('keyup', 'Shift', { altKey: true, metaKey: true });
-    await key('keyup', 'Meta', { altKey: true });
+    await key('keydown', 'Control', { altKey: true, ctrlKey: true });
+    await key('keydown', 'Meta', { altKey: true, ctrlKey: true, metaKey: true });
+    await key('keyup', 'Meta', { altKey: true, ctrlKey: true });
+    await key('keyup', 'Control', { altKey: true });
     await key('keyup', 'Alt');
+    await key('keydown', 'Escape');
+    await key('keyup', 'Escape');
     await wait(450);
     expect(changes).toEqual([]);
     expect(shown()).toBe('drag');
