@@ -757,15 +757,16 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
   });
 
-  // Karabiner's Hyper key: Caps Lock held is Cmd+Ctrl+Opt+Shift, tapped alone
-  // it is Escape. Its Alt is part of a chord, so taps pressed in the page never
+  // Karabiner's Hyper key here: Caps Lock held is Cmd+Ctrl+Opt (left_command
+  // with left_control and left_option, the modifiers first), tapped alone it
+  // is Escape. Its Alt is part of a chord, so taps pressed in the page never
   // arm it, however many and however fast.
-  test("Hyper taps pressed in the page (Cmd+Ctrl+Opt+Shift, then Escape) never arm it", async () => {
+  test("Hyper taps pressed in the page (Cmd+Ctrl+Opt, then Escape) never arm it", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
-    const chord = ["Meta", "Control", "Alt", "Shift"];
-    const held = (n: number) => ({ metaKey: n > 0, ctrlKey: n > 1, altKey: n > 2, shiftKey: n > 3 });
+    const chord = ["Control", "Alt", "Meta"];
+    const held = (n: number) => ({ ctrlKey: n > 0, altKey: n > 1, metaKey: n > 2 });
     const armedSeen: boolean[] = [];
     for (let tap = 0; tap < 3; tap += 1) {
       for (let i = 0; i < chord.length; i += 1) {
