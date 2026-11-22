@@ -4,6 +4,7 @@
 // dictionary lazily for hosts: math is typeset on the first commit and names
 // come from the full dictionary. Guarded by tests/entry-assets.test.ts; do not
 // drop or reorder either line.
+import { requestServerTabClose } from '@plannotator/ui/utils/serverTabClose';
 import '@plannotator/ui/utils/math-eager';
 import '@plannotator/ui/utils/identity-tater';
 import { primeImageSizes, type ImageSizes } from './components/image-diff/imageSizes';
@@ -6730,6 +6731,7 @@ const ReviewApp: React.FC = () => {
         {/* Completion overlay - shown after approve/feedback/exit */}
         <CompletionOverlay
           submitted={submitted}
+          hostClose={origin ? requestServerTabClose : undefined}
           title={
             submitted === 'approved' ? 'Changes Approved'
             : submitted === 'exited' && agentClosed ? AGENT_CLOSED_TITLE

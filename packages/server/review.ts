@@ -9,6 +9,7 @@
  *   PLANNOTATOR_PORT   - Fixed port or inclusive range (default: random locally, 19432 for remote)
  */
 
+import { handleCloseTabRequest } from "./close-tab";
 import { childPath } from "@plannotator/shared/child-env";
 import { createPackageChangesService, MAX_PACKAGE_FILE_BYTES, PACKAGE_CHECKOUT_WAIT_MS, prSettingsSource, REMOTE_PACKAGE_READS, waitAtMost } from "@plannotator/shared/package-changes-service";
 import { parseDiffToFiles } from "@plannotator/core/diff-files";
@@ -4324,6 +4325,10 @@ export async function startReviewServer(
           if (agentResponse) return agentResponse;
 
           // API: Exit review session without feedback
+          // The done screen's tab, closed from here when the page's own close is refused (close-tab.ts).
+          if (url.pathname === "/api/close-tab" && req.method === "POST") {
+            return handleCloseTabRequest(req, url);
+          }
           if (url.pathname === "/api/exit" && req.method === "POST") {
             // Already decided (the host closed it, or another tab decided):
             // archiving or settling now would delete a draft the close kept.

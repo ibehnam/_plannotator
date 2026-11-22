@@ -11,6 +11,7 @@
  *   PLANNOTATOR_PORT   - Fixed port or inclusive range (default: random locally, 19432 for remote)
  */
 
+import { handleCloseTabRequest } from "./close-tab";
 import { crossOriginRefusalBody, isSameOriginOrNoOrigin } from "@plannotator/shared/request-origin";
 import { likelyAppHtmlEncoding, prewarmAppHtml } from "@plannotator/shared/app-html";
 import { openPackedApp, packedAppResponse } from "@plannotator/shared/packed-app";
@@ -1552,6 +1553,10 @@ export async function startAnnotateServer(
           }
 
           // API: Exit annotation session without feedback
+          // The done screen's tab, closed from here when the page's own close is refused (close-tab.ts).
+          if (url.pathname === "/api/close-tab" && req.method === "POST") {
+            return handleCloseTabRequest(req, url);
+          }
           if (url.pathname === "/api/exit" && req.method === "POST") {
             // Exit posts carry no body: the nonce rides the query string.
             if (checkServerSession({ serverSession: url.searchParams.get("serverSession") ?? undefined }, serverSession) === "mismatch") {

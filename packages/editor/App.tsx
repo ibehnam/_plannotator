@@ -60,6 +60,7 @@ import { RefHoverCards } from '@plannotator/ui/components/RefHoverCard';
 import { refCardRouteTransport, setRefCardTransport } from '@plannotator/ui/utils/refCard';
 import { Tooltip, TooltipProvider } from '@plannotator/ui/components/Tooltip';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
+import { requestServerTabClose } from '@plannotator/ui/utils/serverTabClose';
 import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
 import { TaterSpriteRunning } from '@plannotator/ui/components/TaterSpriteRunning';
 import { TaterSpritePullup } from '@plannotator/ui/components/TaterSpritePullup';
@@ -8531,6 +8532,7 @@ const App: React.FC = () => {
         {/* Completion overlay - shown after approve/deny */}
         <CompletionOverlay
           submitted={submitted}
+          hostClose={isApiMode ? requestServerTabClose : undefined}
           title={
             archive.archiveMode ? 'Archive Closed'
             : submitted === 'exited' && agentClosed ? closedReviewCopy(agentClosed).title

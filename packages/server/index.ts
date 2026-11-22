@@ -13,6 +13,7 @@
  *                        "qwen-code", "dsh".
  */
 
+import { handleCloseTabRequest } from "./close-tab";
 import { crossOriginRefusalBody, isSameOriginOrNoOrigin } from "@plannotator/shared/request-origin";
 import { likelyAppHtmlEncoding, prewarmAppHtml } from "@plannotator/shared/app-html";
 import { openPackedApp, packedAppResponse } from "@plannotator/shared/packed-app";
@@ -807,6 +808,10 @@ export async function startPlannotatorServer(
           }
 
           // API: Approve plan
+          // The done screen's tab, closed from here when the page's own close is refused (close-tab.ts).
+          if (url.pathname === "/api/close-tab" && req.method === "POST") {
+            return handleCloseTabRequest(req, url);
+          }
           if (url.pathname === "/api/approve" && req.method === "POST") {
             // Check for note integrations and optional feedback
             let feedback: string | undefined;
