@@ -9,7 +9,7 @@
  * state (default, or restored from a cookie) always has a way back, and a
  * fresh cookie recording shown tools still wins over the default.
  * Sidebar/panel halves of the persisted state round-trip; the pen reports the
- * armed-by-default Interact/Annotate state.
+ * Interact/Annotate state, which opens in Interact.
  */
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import React, { act } from "react";
@@ -224,7 +224,7 @@ function armedRing(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-annotate-armed-ring]");
 }
 
-/** Compact mounts wait on the armed ring: neither the pen nor the eye toggle
+/** Compact mounts wait on the page's frame: neither the pen nor the eye toggle
  * exists on the compact touch shell (that absence is what these tests guard). */
 async function mountCompactHtmlAnnotate(fetchImpl: typeof fetch = annotateFetch): Promise<void> {
   globalThis.fetch = fetchImpl;
@@ -236,10 +236,11 @@ async function mountCompactHtmlAnnotate(fetchImpl: typeof fetch = annotateFetch)
   await act(async () => {
     root?.render(<App />);
   });
-  for (let attempt = 0; attempt < 20 && !armedRing(); attempt += 1) {
+  const frame = () => document.querySelector("iframe[srcdoc]");
+  for (let attempt = 0; attempt < 20 && !frame(); attempt += 1) {
     await settle();
   }
-  if (!armedRing()) throw new Error("compact HTML surface did not finish mounting (armed ring missing)");
+  if (!frame()) throw new Error("compact HTML surface did not finish mounting (page frame missing)");
 }
 
 async function openOptionsMenu(): Promise<void> {
@@ -362,29 +363,29 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     expect(floatingCluster()).not.toBeNull();
   });
 
-  test("compact touch layout: annotate mode is disarmable through the Options menu (no pen, no keyboard needed)", async () => {
+  test("compact touch layout: annotate mode is armable through the Options menu (no pen, no keyboard needed)", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     window.matchMedia = coarseMatchMedia as typeof window.matchMedia;
     await mountCompactHtmlAnnotate();
 
-    // Armed by default, and the desktop pen is absent on compact — without
-    // the menu action every tap annotates and the page is unreachable.
+    // The page opens in Interact, and the desktop pen is absent on compact —
+    // without the menu action a tap could never pin an element.
     expect(penToggle()).toBeNull();
-    expect(armedRing()).not.toBeNull();
-
-    await openOptionsMenu();
-    const interact = findMenuItem("Interact with page");
-    if (!interact) throw new Error('compact menu is missing the "Interact with page" action');
-    await act(async () => interact.click());
     expect(armedRing()).toBeNull();
 
-    // And back: the same slot re-arms.
     await openOptionsMenu();
     const annotate = findMenuItem("Annotate page");
     if (!annotate) throw new Error('compact menu is missing the "Annotate page" action');
     await act(async () => annotate.click());
     expect(armedRing()).not.toBeNull();
+
+    // And back: the same slot disarms.
+    await openOptionsMenu();
+    const interact = findMenuItem("Interact with page");
+    if (!interact) throw new Error('compact menu is missing the "Interact with page" action');
+    await act(async () => interact.click());
+    expect(armedRing()).toBeNull();
   });
 
   test("compact touch layout: Refresh from disk is offered through the Options menu (the header refresh is absent)", async () => {
@@ -595,7 +596,7 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     expect(chip()).toBeNull();
   });
 
-  test("Mod+Shift+A toggles annotate mode in BOTH directions (the way back in after Esc)", async () => {
+  test("Mod+Shift+A toggles annotate mode in BOTH directions: it arms the Interact a page opens in, and is the way back in after Esc", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
@@ -608,6 +609,8 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
       });
     };
 
+    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
+    await press();
     expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
     await press();
     expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
@@ -651,20 +654,22 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     expect(toolsToggle()!.getAttribute("aria-pressed")).toBe("true");
   });
 
-  test("the pen toggle starts ARMED (aria-pressed) on a static HTML session and click flips it to Interact", async () => {
+  test("the pen toggle starts in Interact (aria-pressed false, no armed ring) on a static HTML session, and a click arms it", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
 
     const pen = penToggle();
     if (!pen) throw new Error("pen toggle missing");
-    expect(pen.getAttribute("aria-pressed")).toBe("true");
+    expect(pen.getAttribute("aria-pressed")).toBe("false");
+    expect(armedRing()).toBeNull();
 
     await act(async () => pen.click());
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
+    expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
+    expect(armedRing()).not.toBeNull();
 
     await act(async () => penToggle()!.click());
-    expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
+    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
   });
 });
 

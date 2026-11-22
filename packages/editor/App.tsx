@@ -782,9 +782,10 @@ const App: React.FC = () => {
   // captures clicks for pinpoint annotation; disarmed (Interact) = clicks are
   // fully native while committed markers stay visible/clickable and text
   // drag-selection commenting stays live. Session-only, never persisted.
-  // BOTH surface kinds start armed; Esc (or the header pen) drops to
-  // Interact.
-  const [htmlAnnotateArmed, setHtmlAnnotateArmed] = useState(true);
+  // BOTH surface kinds open in Interact, so a page's own controls answer its
+  // first click; Mod+Shift+A, the header pen or the Options menu arms it, and
+  // Esc drops back.
+  const [htmlAnnotateArmed, setHtmlAnnotateArmed] = useState(false);
   const handleHtmlAnnotateToggle = useCallback(() => setHtmlAnnotateArmed((v) => !v), []);
   const handleHtmlToolsToggle = useCallback(() => setHtmlToolsHidden((v) => !v), []);
   const handleHtmlAnnotateExit = useCallback(() => setHtmlAnnotateArmed(false), []);
@@ -4058,8 +4059,8 @@ const App: React.FC = () => {
           // proxy origin. No rawHtml, no version fields, no sharing.
           setRenderAs('html');
           setMarkdown('');
-          // Live sessions open ARMED like every HTML surface (htmlAnnotateArmed
-          // defaults true): pinpoint is the default, Esc drops to Interact.
+          // Live sessions open in Interact like every HTML surface
+          // (htmlAnnotateArmed defaults false): Mod+Shift+A arms pinpoint.
           setLiveApp({
             appUrl: data.appUrl,
             origin: new URL(data.appUrl).origin,
