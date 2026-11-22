@@ -47,7 +47,7 @@ Send Feedback → annotations sent to agent session
 Done / Approve (gate) → positive decision recorded (see the decision control below)
 ```
 
-**Opening view.** config.json `annotateView` (`"wide"` / `"focus"` / `"edit"`) opens an annotate session in that toolbar view, once, when the document first loads; a view the document cannot use (toolbar hidden, Edit on a read-only document, Edit while a draft is offered, folders and bundles) falls back to today's default, and a click in the session wins and is never written back (see `annotateView` in [`environment.md`](environment.md)).
+**Opening view.** config.json `annotateView` (`"wide"` / `"focus"` / `"edit"`) opens an annotate session in that toolbar view, once, when the document first loads; a view the document cannot use (toolbar hidden, Edit on a read-only document, Edit while a draft is offered, folders and bundles) falls back to today's default, and a click in the session wins and is never written back (see `annotateView` in [`environment.md`](environment.md)). With the key unset, a session opens in the Wide or Focus the reader last chose with the toolbar or its shortcut (`annotateViewChoice`, a cookie-only setting, cleared when they turn the view off).
 
 ### AsciiDoc files
 
