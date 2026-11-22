@@ -27,6 +27,7 @@ const headerProps: React.ComponentProps<typeof AppHeader> = {
   aiHasMessages: false,
   annotationCount: 0,
   linkedDocIsActive: false,
+  primaryAvailable: true,
   callbackShareUrlReady: true,
   canShareCurrentSession: false,
   agentName: 'Claude',

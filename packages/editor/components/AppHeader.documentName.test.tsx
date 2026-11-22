@@ -20,7 +20,7 @@ function baseProps(): React.ComponentProps<typeof headerModule extends null ? ne
     isApiMode: true, annotateMode: true, archiveMode: false, goalSetupMode: false, goalSetupCanSubmit: false, goalSetupIsSubmitting: false,
     goalSetupSubmitLabel: 'Submit', isSharedSession: false, origin: null,
     isSubmitting: false, isExiting: false, isPanelOpen: false, aiAvailable: false, isAIChatOpen: false, aiHasMessages: false,
-    annotationCount: 0, linkedDocIsActive: false, callbackShareUrlReady: false, canShareCurrentSession: false,
+    annotationCount: 0, linkedDocIsActive: false, primaryAvailable: true, callbackShareUrlReady: false, canShareCurrentSession: false,
     agentName: 'Claude', availableAgents: [], showAnnotationsWarning: false,
     callbackConfig: null, taterMode: false, mobileSettingsOpen: false, gitUser: undefined, agentTerminalAvailable: false,
     onCallbackFeedback: noop, onCallbackApprove: noop, onAnnotateExit: noop, onGoalSetupExit: noop, onGoalSetupSubmit: noop,
