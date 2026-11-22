@@ -740,6 +740,11 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", altKey: true, bubbles: true }));
     });
+    // A lone Alt switches a moment after it goes down (useInputMethodSwitch's
+    // chord grace, in which a chord's other keys cancel it).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
     expect(armedRing() !== null).toBe(true);
     // Past the hold threshold (useInputMethodSwitch: 300 ms), so the release reverts.
     await act(async () => {
@@ -748,6 +753,36 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", bubbles: true }));
     });
+    expect(armedRing() !== null).toBe(false);
+    expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  // Karabiner's Hyper key: Caps Lock held is Cmd+Ctrl+Opt+Shift, tapped alone
+  // it is Escape. Its Alt is part of a chord, so taps pressed in the page never
+  // arm it, however many and however fast.
+  test("Hyper taps pressed in the page (Cmd+Ctrl+Opt+Shift, then Escape) never arm it", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountHtmlAnnotate();
+    const chord = ["Meta", "Control", "Alt", "Shift"];
+    const held = (n: number) => ({ metaKey: n > 0, ctrlKey: n > 1, altKey: n > 2, shiftKey: n > 3 });
+    const armedSeen: boolean[] = [];
+    for (let tap = 0; tap < 3; tap += 1) {
+      for (let i = 0; i < chord.length; i += 1) {
+        await pressInPage({ key: chord[i], ...held(i + 1) });
+        armedSeen.push(armedRing() !== null);
+      }
+      for (let i = chord.length - 1; i >= 0; i -= 1) {
+        await pressInPage({ event: "keyup", key: chord[i], ...held(i) });
+        armedSeen.push(armedRing() !== null);
+      }
+      await pressInPage({ key: "Escape", code: "Escape" });
+      await pressInPage({ event: "keyup", key: "Escape", code: "Escape" });
+    }
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    expect(armedSeen.filter(Boolean)).toEqual([]);
     expect(armedRing() !== null).toBe(false);
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
   });
