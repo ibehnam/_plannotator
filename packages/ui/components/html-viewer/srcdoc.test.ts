@@ -297,6 +297,66 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     );
   }
 
+  test("an Escape with a host overlay open closes it from inside the page, ahead of the page's handlers and the ladder, in Interact and armed", async () => {
+    document.body.innerHTML = "<p>Page text</p>";
+    const posted: string[] = [];
+    const record = (event: MessageEvent) => {
+      const data = bridgeMessageData(event);
+      if (data && typeof data.type === "string" && /-(overlay-escape|page-escape|annotate-exit|selection-clear)$/.test(data.type)) {
+        posted.push(data.type);
+      }
+    };
+    let pageSaw = 0;
+    const pageHandler = (e: KeyboardEvent) => { if (e.key === "Escape") pageSaw += 1; };
+    window.addEventListener("message", record);
+    document.addEventListener("keydown", pageHandler);
+    const escape = async () => {
+      const key = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      document.body.dispatchEvent(key);
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      return key;
+    };
+    try {
+      for (const active of [false, true]) {
+        postBridge({ type: "plannotator-bridge-set-annotate-mode", active });
+        postBridge({ type: "plannotator-bridge-set-host-overlay", open: true });
+        posted.length = 0;
+        const key = await escape();
+        expect(key.defaultPrevented).toBe(true);
+        expect(posted).toEqual(["plannotator-bridge-overlay-escape"]);
+      }
+      expect(pageSaw).toBe(0);
+      // No overlay open: the ladder is back (armed, Escape exits Annotate).
+      postBridge({ type: "plannotator-bridge-set-host-overlay", open: false });
+      posted.length = 0;
+      await escape();
+      expect(posted).toEqual(["plannotator-bridge-annotate-exit"]);
+      expect(pageSaw).toBe(1);
+    } finally {
+      window.removeEventListener("message", record);
+      document.removeEventListener("keydown", pageHandler);
+      postBridge({ type: "plannotator-bridge-set-host-overlay", open: false });
+      postBridge({ type: "plannotator-bridge-set-annotate-mode", active: true });
+    }
+  });
+
+  test("release-focus has the page give up focus: its focused element blurs and the parent window takes focus", () => {
+    document.body.innerHTML = '<input id="release-field">';
+    const field = document.getElementById("release-field") as HTMLInputElement;
+    field.focus();
+    expect(document.activeElement).toBe(field);
+    let parentFocused = 0;
+    const originalFocus = window.focus;
+    window.focus = () => { parentFocused += 1; };
+    try {
+      postBridge({ type: "plannotator-bridge-release-focus" });
+      expect(document.activeElement).not.toBe(field);
+      expect(parentFocused).toBe(1);
+    } finally {
+      window.focus = originalFocus;
+    }
+  });
+
   test("print requests run only for messages from the parent", () => {
     const originalPrint = window.print;
     let prints = 0;

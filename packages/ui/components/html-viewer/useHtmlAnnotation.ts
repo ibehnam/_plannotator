@@ -1021,8 +1021,11 @@ export function useHtmlAnnotation({
           || reopen
         ) {
           // Release iframe focus so the popover's textarea autofocus lands in the
-          // parent (otherwise the iframe keeps focus and swallows further keys).
+          // parent (otherwise the iframe keeps focus and swallows further keys):
+          // blur the element here, and have the page's own document let go, which
+          // the blur alone does not make it do.
           iframeRef.current?.blur();
+          post({ type: `${PREFIX}release-focus` });
           setCommentPopover({
             anchorEl: anchor,
             contextText: message.text,

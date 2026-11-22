@@ -1099,6 +1099,9 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       onOpenLinkRef.current?.(href, frame);
     }, []);
 
+    // The overlay on top, closed as its own Escape closes it: the bridge's
+    // overlay-escape (an Escape pressed with focus inside the page) runs this.
+    const closeHostOverlayRef = useRef<() => void>(() => {});
     const hook = useHtmlAnnotation({
       iframeRef,
       enabled: !readOnly,
@@ -1125,6 +1128,12 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     });
     createdIdsRef.current = hook.createdAnnotationIds;
     armLinkOfferRef.current = hook.armLinkOffer;
+    closeHostOverlayRef.current = () => {
+      if (hook.commentPopover) hook.handleCommentClose();
+      else if (hook.quickLabelPicker) hook.handleQuickLabelPickerDismiss();
+      else if (hook.toolbarState) hook.handleToolbarClose();
+      else if (globalCommentPopover) setGlobalCommentPopover(null);
+    };
 
     useEffect(() => {
       if (!bridgeReportedRef.current) return;
@@ -1268,6 +1277,14 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
         // live sessions already rejected wrong-origin/tokenless data above.
         if (isRecord(e.data) && e.data.type === `${PREFIX}annotate-exit`) {
           onAnnotateModeExitRef.current?.();
+          return;
+        }
+        // An Escape pressed in the page while one of our overlays is open
+        // (set-host-overlay): close it, as its own Escape would. A page posting
+        // this itself can only close an open overlay, whose words the draft
+        // store keeps.
+        if (isRecord(e.data) && e.data.type === `${PREFIX}overlay-escape`) {
+          closeHostOverlayRef.current();
           return;
         }
         if (isRecord(e.data) && e.data.type === `${PREFIX}annotate-toggle`) {
@@ -1531,6 +1548,18 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
         { type: `${PREFIX}set-annotate-mode`, active: annotateModeActive },
       );
     }, [iframeReadyVersion, annotateModeActive]);
+
+    // Tell the bridge whether one of our overlays is open over the page (the
+    // comment composer, the markup toolbar, a quick-label picker, the global
+    // comment), so an Escape pressed with focus inside the page closes it, as
+    // Escape does in this document. Same re-post pattern as above.
+    const hostOverlayOpen = Boolean(
+      hook.commentPopover || hook.toolbarState || hook.quickLabelPicker || globalCommentPopover,
+    );
+    useEffect(() => {
+      if (iframeReadyVersion === 0) return;
+      postToBridge({ type: `${PREFIX}set-host-overlay`, open: hostOverlayOpen });
+    }, [iframeReadyVersion, hostOverlayOpen]);
 
     // The page's forms and in-page links work as in a tab (`pageNavigation`).
     useEffect(() => {

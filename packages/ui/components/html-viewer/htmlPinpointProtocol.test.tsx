@@ -381,6 +381,40 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     await typeComment(''); // leave no draft for the next test
   });
 
+  test('an Escape pressed inside the page closes the open composer: the bridge is told an overlay is open, and its overlay-escape closes it with its words kept', async () => {
+    const { postSelection, postedToIframe } = await mountViewer({ mode: 'selection', onAdd: () => {} });
+    await postSelection({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
+    const overlayOpen = () =>
+      postedToIframe.filter((m) => m.type === 'plannotator-bridge-set-host-overlay').map((m) => m.open).at(-1);
+    expect(overlayOpen()).toBe(false);
+    await postSelection({ ...selectionMessage, pinpoint: true });
+    // The page is asked to give up focus as the composer opens, not only the frame element blurred.
+    expect(postedToIframe.some((m) => m.type === 'plannotator-bridge-release-focus')).toBe(true);
+    expect(overlayOpen()).toBe(true);
+    await typeComment('Words to keep');
+    const cancelsBefore = postedToIframe.filter((m) => m.type === 'plannotator-bridge-cancel-selection').length;
+    await postSelection({ type: 'plannotator-bridge-overlay-escape' });
+    expect(document.querySelector('[data-comment-popover]')).toBeNull();
+    expect(postedToIframe.filter((m) => m.type === 'plannotator-bridge-cancel-selection').length).toBe(cancelsBefore + 1);
+    expect(overlayOpen()).toBe(false);
+    // The words are kept: pinning the same element again restores them.
+    await postSelection({ ...selectionMessage, pinpoint: true });
+    expect(document.querySelector<HTMLTextAreaElement>('[data-comment-popover] textarea')?.value).toBe('Words to keep');
+    await typeComment(''); // leave no draft for the next test
+  });
+
+  test('overlay-escape closes the markup toolbar too, and with nothing open it does nothing', async () => {
+    const { postSelection, postedToIframe } = await mountViewer({ mode: 'selection', onAdd: () => {} });
+    await postSelection({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
+    await postSelection(selectionMessage);
+    expect(document.querySelector('.annotation-toolbar')).not.toBeNull();
+    await postSelection({ type: 'plannotator-bridge-overlay-escape' });
+    expect(document.querySelector('.annotation-toolbar')).toBeNull();
+    const before = postedToIframe.length;
+    await postSelection({ type: 'plannotator-bridge-overlay-escape' });
+    expect(postedToIframe.slice(before).filter((m) => m.type === 'plannotator-bridge-cancel-selection')).toHaveLength(0);
+  });
+
   test('the bridge closing the draft while the composer is hidden closes the composer', async () => {
     const { postSelection } = await mountViewer({ mode: 'selection', onAdd: () => {} });
     await postSelection({ ...selectionMessage, pinpoint: true });
