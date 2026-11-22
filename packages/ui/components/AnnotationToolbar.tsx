@@ -75,11 +75,10 @@ interface AnnotationToolbarProps {
    *  text), and the Copy button shows even where hideCopyButton hides it.
    *  Absent: Copy copies plain text, exactly as before. No shortcut. */
   getRichCopy?: () => RichCopySource | Promise<RichCopySource>;
-  /** Comment-only surfaces (HTML / live-app viewer): hide the Delete action,
-   *  the quick-label picker, and the Alt+digit label shortcuts. A provided
-   *  onQuickLabel then renders ONLY the hardcoded 👍 "Looks good" button —
-   *  the one label affordance restored to these surfaces. Markdown surfaces
-   *  keep the full toolbar. */
+  /** A host that takes comments only: hide the Delete action, the
+   *  quick-label picker, and the Alt+digit label shortcuts. A provided
+   *  onQuickLabel then renders ONLY the hardcoded 👍 "Looks good" button.
+   *  Markdown and HTML pages keep the full toolbar. */
   commentOnly?: boolean;
   /**
    * Opt-in: offer Delete on a `commentOnly` toolbar too (the Inbox's agent

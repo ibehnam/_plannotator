@@ -23,7 +23,6 @@ import { getRichCopyEnabled } from "../../utils/richCopyPolicy";
 import { useHighlightCopy } from "../../utils/highlightCopy";
 import { elementIdentityForAskAI } from "../../utils/parser";
 import { getIdentity } from "../../utils/identity";
-import { THUMBS_UP_LABEL } from "../../utils/quickLabels";
 import { hashDraftScope } from "../../utils/draftScopeHash";
 import {
   createVimHudCommand,
@@ -31,6 +30,7 @@ import {
   type VimHudCommand,
 } from "../../utils/vimHud";
 import { AnnotationToolbar } from "../AnnotationToolbar";
+import { FloatingQuickLabelPicker } from "../FloatingQuickLabelPicker";
 import type { SelectionAction, SelectionActionContext } from "../../utils/selectionActions";
 import type { MentionSource } from "../../utils/mentions";
 import { AttachmentsButton } from "../AttachmentsButton";
@@ -357,6 +357,16 @@ export interface HtmlViewerProps {
    *  `onAnnotateModeExit`. Honored only while the frame holds focus, and at
    *  most once per STEP_MESSAGE_MIN_INTERVAL_MS. Absent: ignored, as before. */
   onPageEscape?: () => void;
+  /** Shift+1 to Shift+4 pressed inside the page, where focus is not in one of
+   *  its text fields and no selection's toolbar takes typed keys: the digit,
+   *  for the host to pick its annotation mode as the same keys do outside the
+   *  page (utils/annotationModes). Honored only while the frame holds focus.
+   *  Absent: the bridge forwards none, and the page keeps the keys. */
+  onModeKey?: (digit: number) => void;
+  /** Content above the page, inside the viewer's own column (a full-viewport
+   *  surface's annotation toolstrip): the page's frame takes the height left.
+   *  Absent: nothing above the page, as before. */
+  header?: React.ReactNode;
   /** Opt-in Vim-style keyboard selection. Default false for compatibility. */
   vimModeEnabled?: boolean;
   /** Replace the iframe-local compact badge with the shared live key HUD. */
@@ -699,6 +709,8 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       onStep,
       stepInInteract = false,
       onPageEscape,
+      onModeKey,
+      header,
       vimModeEnabled = false,
       vimHudEnabled = false,
       vimHudKeyPanelEnabled = true,
@@ -792,6 +804,8 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     stepInInteractRef.current = stepInInteract;
     const lastStepAtRef = useRef(0);
     const onPageEscapeRef = useRef(onPageEscape);
+    const onModeKeyRef = useRef(onModeKey);
+    onModeKeyRef.current = onModeKey;
     onPageEscapeRef.current = onPageEscape;
     const lastPageEscapeAtRef = useRef(0);
 
@@ -1325,6 +1339,15 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
           onStepRef.current?.(dir);
           return;
         }
+        if (isRecord(e.data) && e.data.type === `${PREFIX}mode-key`) {
+          // Like page-escape, the page could post this itself: honored only
+          // while the frame holds focus, for a digit the host maps (1 to 4).
+          const digit = e.data.digit;
+          if (typeof digit !== "number" || !Number.isInteger(digit) || digit < 1 || digit > 4) return;
+          if (document.activeElement !== iframeRef.current) return;
+          onModeKeyRef.current?.(digit);
+          return;
+        }
         if (isRecord(e.data) && e.data.type === `${PREFIX}page-escape`) {
           // Like a step, the page could post this itself: honored only for a
           // key pressed in the frame, in Interact, at most once per interval.
@@ -1548,6 +1571,14 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
         { type: `${PREFIX}set-annotate-mode`, active: annotateModeActive },
       );
     }, [iframeReadyVersion, annotateModeActive]);
+
+    // Shift+1 to Shift+4 inside the page pick the host's annotation mode, when
+    // the host takes them (onModeKey); otherwise the page keeps the keys.
+    const modeKeysWanted = Boolean(onModeKey);
+    useEffect(() => {
+      if (iframeReadyVersion === 0) return;
+      postToBridge({ type: `${PREFIX}set-mode-keys`, active: modeKeysWanted });
+    }, [iframeReadyVersion, modeKeysWanted]);
 
     // Tell the bridge whether one of our overlays is open over the page (the
     // comment composer, the markup toolbar, a quick-label picker, the global
@@ -1835,6 +1866,8 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
             </div>
           )}
 
+          {header}
+
           <article
             data-print-region="article"
             className={fullViewport ? "relative overflow-hidden w-full flex-1" : "relative bg-card rounded-xl shadow-xl overflow-hidden w-full"}
@@ -1960,6 +1993,18 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
             document.body,
           )}
 
+        {/* Quick-label picker: a selection in Label mode, as on a Markdown page. */}
+        {!readOnly && hook.quickLabelPicker &&
+          createPortal(
+            <FloatingQuickLabelPicker
+              anchorEl={hook.quickLabelPicker.anchorEl}
+              cursorHint={hook.quickLabelPicker.cursorHint}
+              onSelect={hook.handleFloatingQuickLabel}
+              onDismiss={hook.handleQuickLabelPickerDismiss}
+            />,
+            document.body,
+          )}
+
         {/* Toolbar portal */}
         {!readOnly && hook.toolbarState &&
           createPortal(
@@ -1969,19 +2014,13 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
               copyText={hook.toolbarState.selectionText}
               getRichCopy={getRichCopyEnabled() ? hook.toolbarState.getRichCopy : undefined}
               touchAnchorRect={hook.toolbarState.getAnchorRect}
-              // HTML/live surfaces are comment-only: no Delete, no label
-              // picker, no Alt+digit labels (commentOnly). Exactly ONE label
-              // affordance is restored: the hardcoded 👍 "Looks good". The
-              // wrapper filters by id as defense in depth, so no present or
-              // future toolbar path can emit an arbitrary label here.
-              commentOnly
+              // The same toolbar as a Markdown selection's (utils/annotationModes):
+              // Delete, Comment, every quick label and their Alt+digit keys.
               selectionActions={selectionActions}
               selectionActionsIcon={selectionActionsIcon}
               onSide={onSide}
               sideButton={sideButton}
-              onQuickLabel={(label) => {
-                if (label.id === THUMBS_UP_LABEL.id) hook.handleQuickLabel(label);
-              }}
+              onQuickLabel={hook.handleQuickLabel}
               onAnnotate={hook.handleAnnotate}
               onRequestComment={hook.handleRequestComment}
               onClose={hook.handleToolbarClose}

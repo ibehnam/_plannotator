@@ -61,6 +61,7 @@ import { refCardRouteTransport, setRefCardTransport } from '@plannotator/ui/util
 import { Tooltip, TooltipProvider } from '@plannotator/ui/components/Tooltip';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
 import { requestServerTabClose } from '@plannotator/ui/utils/serverTabClose';
+import { ANNOTATION_MODE_ORDER, annotationModeForDigit } from '@plannotator/ui/utils/annotationModes';
 import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
 import { TaterSpriteRunning } from '@plannotator/ui/components/TaterSpriteRunning';
 import { TaterSpritePullup } from '@plannotator/ui/components/TaterSpritePullup';
@@ -3917,11 +3918,13 @@ const App: React.FC = () => {
   };
 
   const handleInputMethodChange = (method: InputMethod) => {
-    // HTML and live-app surfaces pin the viewer to pinpoint (drag-selection
-    // commenting is simultaneously live there, so there is nothing to
-    // switch): the toolstrip is not rendered and the Alt shortcut must not
-    // flip state the surface ignores or write the html cookie.
-    if (liveApp || isHtmlSurface) return;
+    // An HTML or live-app page's Select and Pinpoint are its Interact and
+    // Annotate: one state, set alike by the toolstrip, the Alt keys, the header
+    // pen and Mod+Shift+A, and never persisted (each page opens in Interact).
+    if (liveApp || isHtmlSurface) {
+      setHtmlAnnotateArmed(method === 'pinpoint');
+      return;
+    }
     if (isCompactTouchLayout) {
       setCompactInputMethod(method);
       return;
@@ -3949,9 +3952,8 @@ const App: React.FC = () => {
   useInputMethodSwitch(effectiveInputMethod, handleInputMethodChange);
 
   // Gates both the toolstrip's own render and its shortcuts, so a mode can never
-  // change with no visible pill to report it. HTML/live surfaces have no
-  // toolstrip at all: they are comment-only with pinpoint + drag both live,
-  // so there is no input method or annotation mode left to switch.
+  // change with no visible pill to report it. HTML/live surfaces show the same
+  // toolstrip over their page (htmlToolstripVisible below).
   const toolstripVisible = useMemo(
     () =>
       // A diagram document is excluded with HTML: its single block is
@@ -3974,9 +3976,16 @@ const App: React.FC = () => {
     ],
   );
 
+  // An HTML or live-app page gets the toolstrip a Markdown document has, above
+  // the page: its modes and their Shift+1 to 4 keys decide what a selection
+  // does there as here (utils/annotationModes), and its Select and Pinpoint are
+  // the page's Interact and Annotate. Not over a read-only page, a diff or the
+  // archive, as on Markdown.
+  const htmlToolstripVisible = isHtmlSurface && !documentReadOnly && !goalSetupMode && !isPlanDiffActive;
+
   const canHandleAnnotationModeShortcut = useCallback(
-    (event: KeyboardEvent) => toolstripVisible && canHandleDocumentChromeShortcut(event),
-    [canHandleDocumentChromeShortcut, toolstripVisible],
+    (event: KeyboardEvent) => (toolstripVisible || htmlToolstripVisible) && canHandleDocumentChromeShortcut(event),
+    [canHandleDocumentChromeShortcut, htmlToolstripVisible, toolstripVisible],
   );
 
   // Interact/Annotate toggle (Mod+Shift+A) and Show/Hide tools (Mod+Shift+X)
@@ -3999,10 +4008,12 @@ const App: React.FC = () => {
 
   useAnnotationModeShortcuts({
     handlers: {
-      selectMarkupMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange('selection') },
-      selectCommentMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange('comment') },
-      selectRedlineMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange('redline') },
-      selectQuickLabelMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange('quickLabel') },
+      // Shift+1 to 4 in the toolstrip's order (utils/annotationModes), which
+      // the keys pressed inside an HTML page follow too (onModeKey).
+      selectMarkupMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange(ANNOTATION_MODE_ORDER[0]!) },
+      selectCommentMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange(ANNOTATION_MODE_ORDER[1]!) },
+      selectRedlineMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange(ANNOTATION_MODE_ORDER[2]!) },
+      selectQuickLabelMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange(ANNOTATION_MODE_ORDER[3]!) },
     },
   });
 
@@ -7926,10 +7937,9 @@ const App: React.FC = () => {
               )}
 
               {/* Annotation Toolstrip — the mode switcher (selection/redline input +
-                  comment/markup mode). Markdown surfaces only: HTML/live surfaces
-                  are comment-only with pinpoint + drag both live, so no floating
-                  toolstrip ever overlays the rendered page. Hidden during plan
-                  diff and archive browsing. */}
+                  comment/markup mode). An HTML/live surface shows the same one
+                  above its page (the HtmlViewer's header), never over it. Hidden
+                  during plan diff and archive browsing. */}
               {toolstripVisible && (
                 <div
                   data-print-hide
@@ -8137,12 +8147,36 @@ const App: React.FC = () => {
                     onSelectAnnotation={handleSelectAnnotation}
                     selectedAnnotationId={selectedAnnotationId}
                     mode={effectiveEditorMode}
-                    // HTML/live surfaces are always pinpoint: armed = click
-                    // pins an element AND drag selects text (both live at
-                    // once); Interact (Esc) keeps clicks native while drag
-                    // commenting stays available. No input-method switch.
+                    // The bridge's pinpoint machinery serves both states:
+                    // armed (the toolstrip's Pinpoint) pins an element on a
+                    // click, and a drag selects text in both; Interact (its
+                    // Select) keeps clicks native.
                     inputMethod="pinpoint"
                     annotateModeActive={htmlAnnotateArmed}
+                    header={htmlToolstripVisible ? (
+                      <div data-print-hide data-html-toolstrip className="w-full flex items-center justify-start px-3 py-2">
+                        {isCompactTouchLayout ? (
+                          <CompactAnnotationControls
+                            inputMethod={htmlAnnotateArmed ? 'pinpoint' : 'drag'}
+                            onInputMethodChange={handleInputMethodChange}
+                          />
+                        ) : (
+                          <AnnotationToolstrip
+                            inputMethod={htmlAnnotateArmed ? 'pinpoint' : 'drag'}
+                            onInputMethodChange={handleInputMethodChange}
+                            mode={editorMode}
+                            onModeChange={handleEditorModeChange}
+                            taterMode={taterMode}
+                            showHelpLink
+                          />
+                        )}
+                      </div>
+                    ) : undefined}
+                    // Shift+1 to 4 pressed inside the page: the same modes.
+                    onModeKey={htmlToolstripVisible ? (digit) => {
+                      const mode = annotationModeForDigit(digit);
+                      if (mode) handleEditorModeChange(mode);
+                    } : undefined}
                     onAnnotateModeExit={documentReadOnly ? undefined : handleHtmlAnnotateExit}
                     onAnnotateModeToggle={documentReadOnly ? undefined : handleHtmlAnnotateToggle}
                     // Mod+Shift+X from inside the iframe. Offered on read-only

@@ -16,8 +16,8 @@ export interface AnnotationToolstripProps {
    */
   compact?: boolean;
   /**
-   * Show the "how does this work?" help link. Default true; hidden on the
-   * floating HTML toolstrip where space is tight.
+   * Show the "how does this work?" help link. Default true; hidden where
+   * space is tight.
    */
   showHelpLink?: boolean;
   /**

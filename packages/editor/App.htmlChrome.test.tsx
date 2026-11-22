@@ -671,6 +671,47 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + pen toggle)", () => {
     await act(async () => penToggle()!.click());
     expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
   });
+
+  function stripButton(label: string): HTMLButtonElement | undefined {
+    const strip = document.querySelector("[data-html-toolstrip]");
+    if (!strip) throw new Error("HTML toolstrip missing");
+    // A toolstrip button holds its label twice (the visible one, and a hidden
+    // copy that sizes it): the first span is the visible one.
+    return Array.from(strip.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.querySelector("span")?.textContent === label);
+  }
+
+  test("an HTML page has the Markdown toolstrip above it: its Pinpoint arms the page and its Select disarms it, with the pen", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountHtmlAnnotate();
+    for (const label of ["Select", "Pinpoint", "Markup", "Comment", "Redline", "Label"]) {
+      expect(stripButton(label)).toBeDefined();
+    }
+    expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
+    expect(armedRing()).toBeNull();
+    await act(async () => stripButton("Pinpoint")!.click());
+    expect(armedRing()).not.toBeNull();
+    expect(penToggle()!.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => stripButton("Select")!.click());
+    expect(armedRing()).toBeNull();
+    expect(penToggle()!.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("Shift+3 picks Redline on an HTML page as on a Markdown one, and the toolstrip shows it; Shift+1 returns to Markup", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountHtmlAnnotate();
+    expect(stripButton("Markup")!.getAttribute("aria-pressed")).toBe("true");
+    expect(stripButton("Redline")!.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "#", code: "Digit3", shiftKey: true, bubbles: true }));
+    });
+    expect(stripButton("Redline")!.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "!", code: "Digit1", shiftKey: true, bubbles: true }));
+    });
+    expect(stripButton("Markup")!.getAttribute("aria-pressed")).toBe("true");
+  });
 });
 
 describe.if(hasDom)("HTML chrome in a folder annotate session", () => {

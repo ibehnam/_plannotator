@@ -12,6 +12,7 @@ import { metaWithBelowTitle, metaWithoutBelowTitle, snapRangeOutOfBelowTitle } f
 import { AnnotationType } from '../types';
 import { caretAtPoint, type CaretPosition } from '../utils/caretAtPoint';
 import type { QuickLabel } from '../utils/quickLabels';
+import { quickLabelText, selectionActionFor } from '../utils/annotationModes';
 import {
   dropEmptyNodes,
   trimWhitespaceOnlyBoundaryNodes,
@@ -1849,11 +1850,13 @@ export function useAnnotationHighlighter({
 
           const effectiveMode = pendingModeOverrideRef.current ?? modeRef.current;
           pendingModeOverrideRef.current = null;
+          // The same decision an HTML page's selection takes (utils/annotationModes).
+          const action = selectionActionFor(effectiveMode);
 
-          if (effectiveMode === 'redline') {
+          if (action === 'delete') {
             createAnnotationFromSource(highlighter, source, AnnotationType.DELETION);
             window.getSelection()?.removeAllRanges();
-          } else if (effectiveMode === 'comment') {
+          } else if (action === 'composer') {
             pendingSourceRef.current = source;
             // A comment reopened by its host (`reopenComment`) comes back with its words.
             const reopened = reopenTextRef.current;
@@ -1868,7 +1871,7 @@ export function useAnnotationHighlighter({
               blockIds: selectionBlockIds(highlighter, source),
               ...withStartOffset(selectionSourceOffset(highlighter, source)),
             });
-          } else if (effectiveMode === 'quickLabel') {
+          } else if (action === 'labelPicker') {
             pendingSourceRef.current = source;
             setQuickLabelPicker({
               anchorEl: doms[0] as HTMLElement,
@@ -2722,7 +2725,7 @@ export function useAnnotationHighlighter({
     if (isMathAnnotationSource(toolbarState.source)) {
       createAnnotationFromMathSource(
         toolbarState.source, AnnotationType.COMMENT,
-        `${label.emoji} ${label.text}`, undefined, true, label.tip
+        quickLabelText(label), undefined, true, label.tip
       );
       clearPendingSelection();
       setToolbarState(null);
@@ -2732,7 +2735,7 @@ export function useAnnotationHighlighter({
     if (!highlighter) return;
     createAnnotationFromSource(
       highlighter, toolbarState.source, AnnotationType.COMMENT,
-      `${label.emoji} ${label.text}`, undefined, true, label.tip
+      quickLabelText(label), undefined, true, label.tip
     );
     clearPendingSelection();
     setToolbarState(null);
@@ -2913,7 +2916,7 @@ export function useAnnotationHighlighter({
       createAnnotationFromMathSource(
         quickLabelPicker.source,
         AnnotationType.COMMENT,
-        `${label.emoji} ${label.text}`,
+        quickLabelText(label),
         undefined,
         true,
         label.tip,
@@ -2926,7 +2929,7 @@ export function useAnnotationHighlighter({
     if (!highlighterRef.current) return;
     createAnnotationFromSource(
       highlighterRef.current, quickLabelPicker.source, AnnotationType.COMMENT,
-      `${label.emoji} ${label.text}`, undefined, true, label.tip
+      quickLabelText(label), undefined, true, label.tip
     );
     clearPendingSelection();
     setQuickLabelPicker(null);

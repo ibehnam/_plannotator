@@ -340,6 +340,36 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     }
   });
 
+  test("Shift+1 to 4 pressed in the page go to the host as mode-key once it asks for them, never from a text field or over a pending selection", async () => {
+    document.body.innerHTML = '<p>Page text</p><input id="mode-field">';
+    const digits: number[] = [];
+    const record = (event: MessageEvent) => {
+      const data = bridgeMessageData(event);
+      if (data && data.type === "plannotator-bridge-mode-key") digits.push(data.digit as number);
+    };
+    window.addEventListener("message", record);
+    const press = async (target: Element, code: string, extra: KeyboardEventInit = {}) => {
+      const key = new KeyboardEvent("keydown", { code, key: "#", shiftKey: true, bubbles: true, cancelable: true, ...extra });
+      target.dispatchEvent(key);
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      return key;
+    };
+    try {
+      const page = document.querySelector("p")!;
+      expect((await press(page, "Digit3")).defaultPrevented).toBe(false);
+      expect(digits).toEqual([]);
+      postBridge({ type: "plannotator-bridge-set-mode-keys", active: true });
+      expect((await press(page, "Digit3")).defaultPrevented).toBe(true);
+      await press(page, "Digit5");
+      await press(page, "Digit2", { metaKey: true });
+      await press(document.getElementById("mode-field")!, "Digit1");
+      expect(digits).toEqual([3]);
+    } finally {
+      window.removeEventListener("message", record);
+      postBridge({ type: "plannotator-bridge-set-mode-keys", active: false });
+    }
+  });
+
   test("release-focus has the page give up focus: its focused element blurs and the parent window takes focus", () => {
     document.body.innerHTML = '<input id="release-field">';
     const field = document.getElementById("release-field") as HTMLInputElement;
