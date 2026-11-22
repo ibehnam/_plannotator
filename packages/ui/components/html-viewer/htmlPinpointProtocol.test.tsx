@@ -416,6 +416,24 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     expect(postedToIframe.slice(before).filter((m) => m.type === 'plannotator-bridge-cancel-selection')).toHaveLength(0);
   });
 
+  test("Escape with focus on this document's body closes a visible composer, its words kept, as after a click back into the page", async () => {
+    const { postSelection } = await mountViewer({ mode: 'selection', onAdd: () => {} });
+    await postSelection({ ...selectionMessage, pinpoint: true });
+    await typeComment('Words for later');
+    (document.activeElement as HTMLElement | null)?.blur();
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await act(async () => { document.body.dispatchEvent(escape); });
+    expect(escape.defaultPrevented).toBe(true);
+    expect(document.querySelector('[data-comment-popover]')).toBeNull();
+    // A second Escape is not taken by the closed composer.
+    const next = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await act(async () => { document.body.dispatchEvent(next); });
+    expect(next.defaultPrevented).toBe(false);
+    await postSelection({ ...selectionMessage, pinpoint: true });
+    expect(document.querySelector<HTMLTextAreaElement>('[data-comment-popover] textarea')?.value).toBe('Words for later');
+    await typeComment(''); // leave no draft for the next test
+  });
+
   test('the bridge closing the draft while the composer is hidden closes the composer', async () => {
     const { postSelection } = await mountViewer({ mode: 'selection', onAdd: () => {} });
     await postSelection({ ...selectionMessage, pinpoint: true });

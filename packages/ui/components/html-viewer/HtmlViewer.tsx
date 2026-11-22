@@ -1431,9 +1431,8 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
 
     // A composer hidden with its target (a slide the page hid) is not on
     // screen: it neither blocks Vim's document focus nor counts as an open
-    // overlay. Escape still closes it, as its own rung (below).
+    // overlay. Escape still closes it, as the composer's rung (below) does.
     const composerShown = !!hook.commentPopover && hook.pinVisible;
-    const composerHidden = !!hook.commentPopover && !hook.pinVisible;
 
     // The composer's textarea has the focus, out of the page's frame, so the
     // browser's copy has no selection: Ctrl+C copies the selected words (or a
@@ -1635,26 +1634,34 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       postToBridge({ type: `${PREFIX}set-touch-selection`, active: touchSelection });
     }, [iframeReadyVersion, touchSelection]);
 
-    // The hidden composer's Escape rung: with focus outside the iframe,
-    // Escape closes the hidden draft (its text stays in the draft store) and
-    // is used, so the next press reaches the rest of the ladder. Capture
-    // phase, so it runs before the Vim document-focus rung. Inside the
-    // iframe the bridge closes the draft and the hook closes the composer.
+    // The composer's Escape rung in this document: with focus outside the
+    // iframe and outside the composer's own fields (on the body after a click
+    // back into the page, or with the composer hidden with its target),
+    // Escape closes the comment composer, the global one too (their text
+    // stays in the draft store), and is used, so the next press reaches the
+    // rest of the ladder. The composer's own fields and card keep their
+    // Escape. Capture phase, so it runs before the Vim document-focus rung.
+    // Inside the iframe the bridge posts overlay-escape instead.
     const handleCommentCloseRef = useRef(hook.handleCommentClose);
     handleCommentCloseRef.current = hook.handleCommentClose;
+    const composerOpen = Boolean(hook.commentPopover) || Boolean(globalCommentPopover);
+    const selectionComposerOpenRef = useRef(false);
+    selectionComposerOpenRef.current = Boolean(hook.commentPopover);
     useEffect(() => {
-      if (readOnly || !composerHidden) return;
+      if (readOnly || !composerOpen) return;
       const onKeyDown = (e: KeyboardEvent) => {
         if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+        if (target?.closest?.('[data-comment-popover]')) return;
         if (document.querySelector('[data-plannotator-confirm-dialog="true"]')) return;
         e.preventDefault();
-        handleCommentCloseRef.current();
+        if (selectionComposerOpenRef.current) handleCommentCloseRef.current();
+        else setGlobalCommentPopover(null);
       };
       window.addEventListener('keydown', onKeyDown, true);
       return () => window.removeEventListener('keydown', onKeyDown, true);
-    }, [readOnly, composerHidden]);
+    }, [readOnly, composerOpen]);
 
     // Parent-side Esc rung: with focus outside the iframe the bridge never
     // sees the keydown. Any open composer/toolbar/picker still closes first —
