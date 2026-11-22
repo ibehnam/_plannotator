@@ -3272,6 +3272,39 @@ describe.if(hasDom)("bridge theme handler (DOM)", () => {
     document.body.replaceChildren();
   });
 
+  // One Escape, one rung: the Escape that closes a pending draft is used here,
+  // so a host the page's unused keys are handed to does not run its own Escape
+  // ladder for it too. An Escape with nothing pending stays unused.
+  test("the Escape that closes a pending draft is used, in Interact and armed; one with nothing pending is not", async () => {
+    document.body.innerHTML = "<p>Draft escape target</p>";
+    postBridge({ type: "plannotator-bridge-set-vim-mode", enabled: false });
+    postBridge({ type: "plannotator-bridge-set-input-method", method: "drag" });
+    const p = document.querySelector("p")!;
+    const escape = () => {
+      const key = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      p.dispatchEvent(key);
+      return key;
+    };
+    try {
+      for (const active of [false, true]) {
+        postBridge({ type: "plannotator-bridge-set-annotate-mode", active });
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        window.getSelection()!.removeAllRanges();
+        window.getSelection()!.addRange(range);
+        p.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+        await waitUntil("the draft highlight", () => visibleHighlights("pn-hl-draft").length > 0);
+
+        expect(escape().defaultPrevented).toBe(true);
+        expect(visibleHighlights("pn-hl-draft").length).toBe(0);
+        expect(escape().defaultPrevented).toBe(false);
+      }
+    } finally {
+      postBridge({ type: "plannotator-bridge-set-annotate-mode", active: true });
+      document.body.replaceChildren();
+    }
+  });
+
   test("rich copy: the selection only flags support; the markup is built when the parent asks", async () => {
     document.body.innerHTML = '<p>Plain <strong>bold <a href="/docs">link</a></strong> tail</p>';
     postBridge({ type: "plannotator-bridge-set-vim-mode", enabled: false });
