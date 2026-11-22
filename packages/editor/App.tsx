@@ -45,7 +45,8 @@ import { parseMarkdownToBlocks, exportAnnotations, exportLinkedDocAnnotations, e
 import { primeSkillCatalog, primeSkillContentsForExport } from '@plannotator/ui/utils/skillCatalog';
 import { Viewer, ViewerHandle } from '@plannotator/ui/components/Viewer';
 import type { AnnotationRestoreReport } from '@plannotator/ui/hooks/useAnnotationHighlighter';
-import { HtmlViewer } from '@plannotator/ui/components/html-viewer';
+import { HtmlViewer, pageKeyClaims } from '@plannotator/ui/components/html-viewer';
+import { annotateSettingsShortcutRegistry, goalSetupSettingsShortcutRegistry, planReviewSettingsShortcutRegistry } from './shortcuts';
 import { MarkdownEditor, type MarkdownEditorHandle } from '@plannotator/ui/components/MarkdownEditor';
 import { AnnotationPanel } from '@plannotator/ui/components/AnnotationPanel';
 import { loadableImageSrc } from '@plannotator/ui/components/ImageRegions';
@@ -3928,6 +3929,14 @@ const App: React.FC = () => {
   const toggleInputMethod = () => handleInputMethodChange(effectiveInputMethod === 'pinpoint' ? 'drag' : 'pinpoint');
   // An HTML or live-app page is armed in Pinpoint, never over a read-only one.
   const pagePinpoint = !documentReadOnly && effectiveInputMethod === 'pinpoint';
+  // The keys pressed in an HTML page are this app's too (HtmlViewer's
+  // forwardPageKeys): every Cmd chord of this surface's shortcuts, the ones its
+  // help lists, is served before the page's own scripts.
+  const pageKeys = useMemo(() => pageKeyClaims(
+    goalSetupMode ? goalSetupSettingsShortcutRegistry
+      : annotateMode ? annotateSettingsShortcutRegistry
+        : planReviewSettingsShortcutRegistry,
+  ), [annotateMode, goalSetupMode]);
 
   // Alt/Option key: hold to temporarily switch, double-tap to toggle
   useInputMethodSwitch(effectiveInputMethod, handleInputMethodChange);
@@ -8150,6 +8159,7 @@ const App: React.FC = () => {
                     // Mod+Shift+X from inside the iframe. Offered on read-only
                     // documents too: the eye is not a document mutation.
                     onToolsToggle={handleHtmlToolsToggle}
+                    forwardPageKeys={pageKeys}
                     vimModeEnabled={liveApp ? false : vimModeEnabled && pagePinpoint}
                     vimHudEnabled={!liveApp && vimModeEnabled && pagePinpoint && vimHudEnabled}
                     vimHudKeyPanelEnabled={vimHudKeyPanelEnabled}

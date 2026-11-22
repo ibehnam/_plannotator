@@ -10,7 +10,7 @@ import type {
   UseAnnotationHighlighterReturn,
 } from "../../hooks/useAnnotationHighlighter";
 import { BRIDGE_PROTOCOL_VERSION } from "./bridge-script";
-import { MAX_PAGE_HISTORY_DELTA } from "./linkGuard";
+import { MAX_PAGE_HISTORY_DELTA, PAGE_KEYS_MESSAGE, type PageKeyClaim } from "./linkGuard";
 import {
   MAX_RICH_CLIPBOARD_HTML_LENGTH,
   MAX_RICH_CLIPBOARD_OUTPUT_LENGTH,
@@ -178,7 +178,27 @@ type BridgeMessage =
   | { type: `${typeof PREFIX}page-change`; pageUrl: string }
   | { type: `${typeof PREFIX}link-click`; href: string }
   | { type: `${typeof PREFIX}page-history`; delta: number }
+  | ({ type: `${typeof PREFIX}page-key` } & PageKey)
   | { type: `${typeof PREFIX}restore-draft-missing`; id: string };
+
+/** A key a person pressed in the page, as the link guard sends it on its port (HtmlViewer's forwardPageKeys). */
+export interface PageKey {
+  event: "keydown" | "keyup";
+  key: string;
+  code: string;
+  location: number;
+  repeat: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}
+
+/** The keys a host asks the link guard for: the Cmd chords it serves first, and Escape while its overlay is open. */
+export interface PageKeysRequest {
+  claims: readonly PageKeyClaim[];
+  escape: boolean;
+}
 
 /** Live proxied-app session credentials: the proxy origin messages must come
  * from, and the per-session token every message must echo. */
@@ -267,6 +287,10 @@ export interface UseHtmlAnnotationOptions {
    *  link guard's port, so only for a call made during a person's click in
    *  the page, never from a window message; never in live sessions. */
   onPageHistory?: (delta: number) => void;
+  /** A key a person pressed in the page, handed over by the link guard once
+   *  the host asked for keys (`setPageKeys`). Arrives only on the guard's
+   *  port, never from a window message; never in live sessions. */
+  onPageKey?: (key: PageKey) => void;
   /** scrollIntoView behavior for scroll-to (selecting an annotation).
    *  Absent: smooth, as before; pass 'auto' to honor reduced motion. */
   scrollBehavior?: 'smooth' | 'auto';
@@ -597,6 +621,17 @@ export function parseBridgeMessage(value: unknown): BridgeMessage | null {
       if (Math.abs(delta) > MAX_PAGE_HISTORY_DELTA) return null;
       return { type: value.type, delta };
     }
+    case `${PREFIX}page-key`: {
+      // A key a person pressed in the page (the link guard's port only): what
+      // a KeyboardEvent needs, bounded.
+      const { event, key, code, location, repeat, metaKey, ctrlKey, shiftKey, altKey } = value;
+      if (event !== "keydown" && event !== "keyup") return null;
+      if (typeof key !== "string" || !key || key.length > 32 || typeof code !== "string" || code.length > 32) return null;
+      if (typeof location !== "number" || !Number.isInteger(location) || location < 0 || location > 3) return null;
+      if (typeof repeat !== "boolean" || typeof metaKey !== "boolean" || typeof ctrlKey !== "boolean") return null;
+      if (typeof shiftKey !== "boolean" || typeof altKey !== "boolean") return null;
+      return { type: value.type, event, key, code, location, repeat, metaKey, ctrlKey, shiftKey, altKey };
+    }
     case `${PREFIX}page-change`:
       // Live-mode SPA navigation report. Bounded like every bridge string.
       return typeof value.pageUrl === "string"
@@ -627,6 +662,7 @@ export function useHtmlAnnotation({
   onPageChange,
   onLinkClick,
   onPageHistory,
+  onPageKey,
   onBridgePointer,
   onUnanchoredChange,
   maxAdditionalTargets,
@@ -669,6 +705,9 @@ export function useHtmlAnnotation({
   /** The host is loading a new document whose link guard carries this key
    *  (null: none): take exactly one link offer with it (linkGuard.ts). */
   armLinkOffer: (key: string | null) => void;
+  /** Ask the link guard for the page's keys (null: stop): sent now on its
+   *  port and on every port taken after, so every load the host starts. */
+  setPageKeys: (keys: PageKeysRequest | null) => void;
 } {
   const [toolbarState, setToolbarState] = useState<ToolbarState | null>(null);
   const [commentPopover, setCommentPopover] = useState<CommentPopoverState | null>(null);
@@ -745,9 +784,19 @@ export function useHtmlAnnotation({
   onLinkClickRef.current = onLinkClick;
   const onPageHistoryRef = useRef(onPageHistory);
   onPageHistoryRef.current = onPageHistory;
+  const onPageKeyRef = useRef(onPageKey);
+  onPageKeyRef.current = onPageKey;
   // The link guard's port (linkGuard.ts) for the document the host loaded
   // last, and the key that load's one offer must carry.
   const linkPortRef = useRef<MessagePort | null>(null);
+  // The keys asked of the guard (setPageKeys), asked again on every port taken.
+  const pageKeysRef = useRef<PageKeysRequest | null>(null);
+  const setPageKeys = useCallback((keys: PageKeysRequest | null) => {
+    const was = pageKeysRef.current;
+    if (JSON.stringify(was) === JSON.stringify(keys)) return;
+    pageKeysRef.current = keys;
+    linkPortRef.current?.postMessage(pageKeysMessage(keys));
+  }, []);
   const linkOfferRef = useRef<{ key: string | null; taken: boolean }>({ key: null, taken: true });
   useEffect(() => () => {
     linkPortRef.current?.close();
@@ -906,8 +955,10 @@ export function useHtmlAnnotation({
         const message = parseBridgeMessage(event.data);
         if (message?.type === `${PREFIX}link-click`) onLinkClickRef.current?.(message.href);
         else if (message?.type === `${PREFIX}page-history`) onPageHistoryRef.current?.(message.delta);
+        else if (message?.type === `${PREFIX}page-key`) onPageKeyRef.current?.(message);
       };
       linkPortRef.current = port;
+      if (pageKeysRef.current) port.postMessage(pageKeysMessage(pageKeysRef.current));
     }
 
     function handler(e: MessageEvent<unknown>) {
@@ -927,7 +978,7 @@ export function useHtmlAnnotation({
 
       const type = message.type;
       // Taken from the link guard's port only (above): on the window they are forgeable.
-      if (type === `${PREFIX}link-click` || type === `${PREFIX}page-history`) return;
+      if (type === `${PREFIX}link-click` || type === `${PREFIX}page-history` || type === `${PREFIX}page-key`) return;
 
       if (
         !enabledRef.current
@@ -1641,5 +1692,13 @@ export function useHtmlAnnotation({
     expireReopen,
     peekComment,
     armLinkOffer,
+    setPageKeys,
   };
+}
+
+/** The guard's keys message for a request (null: stop). */
+function pageKeysMessage(keys: PageKeysRequest | null): Record<string, unknown> {
+  return keys
+    ? { type: PAGE_KEYS_MESSAGE, claims: keys.claims.map(({ key, shift, alt }) => ({ key, shift, alt })), escape: keys.escape }
+    : { type: PAGE_KEYS_MESSAGE, claims: null, escape: false };
 }

@@ -489,6 +489,43 @@ export function matchesShortcutBinding(event: ShortcutKeyEvent, binding: string,
   return matchesKeyToken(event, keyToken, options);
 }
 
+/** A single-press binding as plain data (see `bindingDescriptor`). */
+export interface ShortcutBindingDescriptor {
+  mod: boolean;
+  ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+  /** The event's `key`, a single character upper-cased (`A`, `.`) or a name (`Enter`). */
+  key: string;
+}
+
+/**
+ * A single-press binding as plain data, for a matcher with no access to this
+ * module (an HTML page's frame, which serves the host's chords before the
+ * page): a keydown matches when its modifiers are exactly these and its `key`,
+ * a single character upper-cased, is `key`, as `matchesShortcutBinding` reads
+ * it. Null for every binding whose match depends on more than that: sequences,
+ * holds and double-taps, ranges, digits and `-` and Space (matched by their
+ * code too), and the shifted literals.
+ */
+export function bindingDescriptor(binding: string): ShortcutBindingDescriptor | null {
+  if (binding.includes(' ') || binding.includes('hold')) return null;
+  const tokens = binding.split('+').filter(Boolean);
+  const keyTokens = tokens.filter(token => !MODIFIER_TOKENS.has(token));
+  if (keyTokens.length !== 1) return null;
+  const key = keyTokens[0];
+  if (key === 'A-Z' || key === '1-0' || key === 'Space' || key === '-' || isSingleDigit(key) || SHIFTED_LITERAL_TOKENS.has(key)) {
+    return null;
+  }
+  return {
+    mod: tokens.includes('Mod'),
+    ctrl: tokens.includes('Ctrl'),
+    shift: tokens.includes('Shift'),
+    alt: tokens.includes('Alt'),
+    key,
+  };
+}
+
 /**
  * Match one key group from a sequential binding such as `G G`.
  *

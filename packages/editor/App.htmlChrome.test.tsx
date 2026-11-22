@@ -23,6 +23,7 @@ import {
   setStorageBackend,
   type StorageBackend,
 } from "@plannotator/ui/utils/storage";
+import { bridgeLinkPort } from "../ui/test-setup/bridgeLinkPort";
 
 const hasDom = typeof document !== "undefined";
 
@@ -424,8 +425,8 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     window.matchMedia = coarseMatchMedia as typeof window.matchMedia;
     await mountCompactHtmlAnnotate();
 
-    expect(pen()).toBeNull();
-    expect(armedRing()).toBeNull();
+    expect(pen() !== null).toBe(false);
+    expect(armedRing() !== null).toBe(false);
     await openOptionsMenu();
     expect(findMenuItem("Annotate page")).toBeUndefined();
     expect(findMenuItem("Interact with page")).toBeUndefined();
@@ -441,9 +442,9 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
       await act(async () => button.click());
     };
     await choice("Pinpoint");
-    expect(armedRing()).not.toBeNull();
+    expect(armedRing() !== null).toBe(true);
     await choice("Select text");
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
   });
 
   test("compact touch layout: Refresh from disk is offered through the Options menu (the header refresh is absent)", async () => {
@@ -670,10 +671,10 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
     await pressModShiftA();
     expect(stripButton("Pinpoint")!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).not.toBeNull();
+    expect(armedRing() !== null).toBe(true);
     await pressModShiftA();
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
   });
 
   test("Mod+Shift+A switches a Markdown document's toolstrip too", async () => {
@@ -693,7 +694,7 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
     await act(async () => stripButton("Pinpoint")!.click());
-    expect(armedRing()).not.toBeNull();
+    expect(armedRing() !== null).toBe(true);
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
@@ -709,7 +710,7 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     });
 
     expect(stripButton("Pinpoint")!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).not.toBeNull();
+    expect(armedRing() !== null).toBe(true);
   });
 
   test("the choice is remembered: across a remount, and from a Markdown document to an HTML page", async () => {
@@ -721,25 +722,25 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
 
     await mountHtmlAnnotate();
     expect(stripButton("Pinpoint")!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).not.toBeNull();
+    expect(armedRing() !== null).toBe(true);
     await act(async () => stripButton("Select")!.click());
     await unmountHtmlAnnotate();
 
     await mountHtmlAnnotate();
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
   });
 
   test("Alt held arms the page, and its release hands the clicks back", async () => {
     setStorageBackend(memoryBackend);
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", altKey: true, bubbles: true }));
     });
-    expect(armedRing()).not.toBeNull();
+    expect(armedRing() !== null).toBe(true);
     // Past the hold threshold (useInputMethodSwitch: 300 ms), so the release reverts.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 350));
@@ -747,7 +748,7 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", bubbles: true }));
     });
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -791,9 +792,9 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
     seedAnnouncementsSeen();
     await mountHtmlAnnotate();
 
-    expect(pen()).toBeNull();
+    expect(pen() !== null).toBe(false);
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
   });
 
   test("an HTML page has the Markdown toolstrip above it: its Pinpoint arms the page and its Select disarms it", async () => {
@@ -804,11 +805,70 @@ describe.if(hasDom)("HTML annotate chrome (tools toggle + the toolstrip's Select
       expect(stripButton(label)).toBeDefined();
     }
     expect(stripButton("Select")!.getAttribute("aria-pressed")).toBe("true");
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
     await act(async () => stripButton("Pinpoint")!.click());
-    expect(armedRing()).not.toBeNull();
+    expect(armedRing() !== null).toBe(true);
     await act(async () => stripButton("Select")!.click());
-    expect(armedRing()).toBeNull();
+    expect(armedRing() !== null).toBe(false);
+  });
+
+  // A key pressed inside the page, as the link guard hands it over on its port
+  // with focus in the page (the guard does not run in happy-dom's frame;
+  // linkGuard.test.ts holds its side): the app's own shortcuts run for it.
+  async function pressInPage(init: Record<string, unknown>): Promise<void> {
+    const iframe = document.querySelector<HTMLIFrameElement>("iframe[srcdoc]");
+    if (!iframe) throw new Error("HTML iframe missing");
+    const port = await bridgeLinkPort(iframe);
+    iframe.focus();
+    await act(async () => {
+      port.postMessage({
+        type: "plannotator-bridge-page-key", event: "keydown", code: "", location: 0, repeat: false,
+        metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...init,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  }
+
+  test("Mod+Enter pressed inside the page sends the review's Done", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    const sent: string[] = [];
+    await mountHtmlAnnotate(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (url.pathname === "/api/feedback" && init?.method === "POST") sent.push(url.pathname);
+      return annotateFetch(input);
+    });
+    await pressInPage({ key: "Enter", code: "Enter", metaKey: true });
+    expect(sent).toEqual(["/api/feedback"]);
+  });
+
+  test("Shift+2 pressed inside the page picks Comment", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    await mountHtmlAnnotate();
+    expect(stripButton("Comment")!.getAttribute("aria-pressed")).toBe("false");
+    await pressInPage({ key: "@", code: "Digit2", shiftKey: true });
+    expect(stripButton("Comment")!.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("Escape pressed inside the page closes the comment composer", async () => {
+    setStorageBackend(memoryBackend);
+    seedAnnouncementsSeen();
+    memory.set(
+      "plannotator-html-chrome",
+      JSON.stringify({ toolsHidden: false, sidebarOpen: false, panelOpen: false, savedAt: Date.now() }),
+    );
+    await mountHtmlAnnotate();
+    await settle();
+    const commentButton = findButtonByText("Comment");
+    if (!commentButton) throw new Error("the floating cluster did not render its Comment button");
+    await act(async () => commentButton.click());
+    await settle();
+    const composerOpen = () => document.querySelector('[data-comment-popover="true"]') !== null;
+    expect(composerOpen()).toBe(true);
+
+    await pressInPage({ key: "Escape", code: "Escape" });
+    expect(composerOpen()).toBe(false);
   });
 
   test("Shift+3 picks Redline on an HTML page as on a Markdown one, and the toolstrip shows it; Shift+1 returns to Markup", async () => {
