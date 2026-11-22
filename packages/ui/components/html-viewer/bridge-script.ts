@@ -645,13 +645,6 @@ ${SANDBOX_SHIM_SCRIPT}
   // marker buttons keep their own clicks. Armed until the host's first
   // set-annotate-mode says otherwise (the annotate app opens pages in Interact).
   var annotateModeActive = true;
-  // Whether the host has an overlay open over this page (the comment composer,
-  // the markup toolbar, a quick-label picker, the global comment): Escape then
-  // closes it wherever focus is, as it does in the host's own document.
-  var hostOverlayOpen = false;
-  // Whether Shift+1 to Shift+4 pressed here pick the host's annotation mode
-  // (the host opted in: set-mode-keys); otherwise the page keeps the keys.
-  var modeKeysWanted = false;
   // A native host decides link navigations itself (HtmlViewer hostNavigates).
   var hostNavigates = false;
   // Forms and in-page links work as in a tab (the host's opt-in, \`pageNavigation\`).
@@ -1126,14 +1119,6 @@ ${SANDBOX_SHIM_SCRIPT}
 
     else if (type === PREFIX + 'set-page-reports') {
       setPageReports(e.data);
-    }
-
-    else if (type === PREFIX + 'set-host-overlay') {
-      hostOverlayOpen = e.data.open === true;
-    }
-
-    else if (type === PREFIX + 'set-mode-keys') {
-      modeKeysWanted = e.data.active === true;
     }
 
     else if (type === PREFIX + 'release-focus') {
@@ -5098,19 +5083,6 @@ ${SANDBOX_SHIM_SCRIPT}
     annotateElement(el, undefined, true, { x: e.clientX, y: e.clientY });
   }, true);
 
-  // An overlay the host has open over the page takes Escape first, wherever
-  // focus is, ahead of Vim's ladder and the page's own handlers: Escape closes
-  // the comment composer in the host's document, and with focus left in the
-  // page (a click back into it, or a focus handoff the frame kept) it closes it
-  // from here too. The host closes it and cancels the selection, which clears
-  // this side's pending state.
-  window.addEventListener('keydown', function(e) {
-    if (e.key !== 'Escape' || !hostOverlayOpen || e.isComposing) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    postToParent({ type: PREFIX + 'overlay-escape' });
-  }, true);
-
   // Escape ladder (outside vim, which has its own): a pending draft closes
   // first, then the hover outline clears, then Esc EXITS Annotate back to
   // Interact — the parent owns the mode, so the final rung only posts
@@ -6432,22 +6404,6 @@ ${SANDBOX_SHIM_SCRIPT}
     hidePinpointLabel();
     updateVimUi();
   }, true);
-
-  // --- Annotation modes ---
-  // Shift+1 to Shift+4 pick the host's annotation mode (Markup, Comment,
-  // Redline, Label), as the same keys do outside the page. Not while a
-  // selection is pending (its toolbar's type-to-comment owns typed keys, as on
-  // a Markdown page), nor in one of the page's own fields, nor with another
-  // modifier held.
-  document.addEventListener('keydown', function(e) {
-    if (!modeKeysWanted || pendingSelection) return;
-    if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
-    var digit = /^Digit([1-4])$/.exec(e.code || '');
-    if (!digit) return;
-    if (isTextEntryTarget(e.target)) return;
-    e.preventDefault();
-    postToParent({ type: PREFIX + 'mode-key', digit: Number(digit[1]) });
-  });
 
   // --- Type-to-comment ---
   // While a selection is pending, focus is inside this iframe, so the parent's

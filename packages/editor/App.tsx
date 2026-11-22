@@ -62,7 +62,7 @@ import { refCardRouteTransport, setRefCardTransport } from '@plannotator/ui/util
 import { Tooltip, TooltipProvider } from '@plannotator/ui/components/Tooltip';
 import { AnnotationToolstrip } from '@plannotator/ui/components/AnnotationToolstrip';
 import { requestServerTabClose } from '@plannotator/ui/utils/serverTabClose';
-import { ANNOTATION_MODE_ORDER, annotationModeForDigit } from '@plannotator/ui/utils/annotationModes';
+import { ANNOTATION_MODE_ORDER } from '@plannotator/ui/utils/annotationModes';
 import { StickyHeaderLane } from '@plannotator/ui/components/StickyHeaderLane';
 import { TaterSpriteRunning } from '@plannotator/ui/components/TaterSpriteRunning';
 import { TaterSpritePullup } from '@plannotator/ui/components/TaterSpritePullup';
@@ -3999,8 +3999,8 @@ const App: React.FC = () => {
 
   useAnnotationModeShortcuts({
     handlers: {
-      // Shift+1 to 4 in the toolstrip's order (utils/annotationModes), which
-      // the keys pressed inside an HTML page follow too (onModeKey).
+      // Shift+1 to 4 in the toolstrip's order (utils/annotationModes), pressed
+      // here or inside an HTML page (its keys are this app's: forwardPageKeys).
       selectMarkupMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange(ANNOTATION_MODE_ORDER[0]!) },
       selectCommentMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange(ANNOTATION_MODE_ORDER[1]!) },
       selectRedlineMode: { when: canHandleAnnotationModeShortcut, handle: () => handleEditorModeChange(ANNOTATION_MODE_ORDER[2]!) },
@@ -8148,11 +8148,6 @@ const App: React.FC = () => {
                         )}
                       </div>
                     ) : undefined}
-                    // Shift+1 to 4 pressed inside the page: the same modes.
-                    onModeKey={htmlToolstripVisible ? (digit) => {
-                      const mode = annotationModeForDigit(digit);
-                      if (mode) handleEditorModeChange(mode);
-                    } : undefined}
                     // Mod+Shift+A from inside the iframe; no Escape leaves
                     // Pinpoint (no onAnnotateModeExit), as on Markdown.
                     onAnnotateModeToggle={documentReadOnly ? undefined : toggleInputMethod}

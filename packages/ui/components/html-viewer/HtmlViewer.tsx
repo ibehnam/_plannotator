@@ -358,12 +358,6 @@ export interface HtmlViewerProps {
    *  `onAnnotateModeExit`. Honored only while the frame holds focus, and at
    *  most once per STEP_MESSAGE_MIN_INTERVAL_MS. Absent: ignored, as before. */
   onPageEscape?: () => void;
-  /** Shift+1 to Shift+4 pressed inside the page, where focus is not in one of
-   *  its text fields and no selection's toolbar takes typed keys: the digit,
-   *  for the host to pick its annotation mode as the same keys do outside the
-   *  page (utils/annotationModes). Honored only while the frame holds focus.
-   *  Absent: the bridge forwards none, and the page keeps the keys. */
-  onModeKey?: (digit: number) => void;
   /** The page's keys are this document's too (the review app; the Inbox
    *  leaves it absent): the link guard hands over, on its port, every key a
    *  person presses in the page that the page did not use, and these Cmd
@@ -720,7 +714,6 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       onStep,
       stepInInteract = false,
       onPageEscape,
-      onModeKey,
       forwardPageKeys,
       header,
       vimModeEnabled = false,
@@ -816,8 +809,6 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     stepInInteractRef.current = stepInInteract;
     const lastStepAtRef = useRef(0);
     const onPageEscapeRef = useRef(onPageEscape);
-    const onModeKeyRef = useRef(onModeKey);
-    onModeKeyRef.current = onModeKey;
     onPageEscapeRef.current = onPageEscape;
     const lastPageEscapeAtRef = useRef(0);
 
@@ -1125,9 +1116,6 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       onOpenLinkRef.current?.(href, frame);
     }, []);
 
-    // The overlay on top, closed as its own Escape closes it: the bridge's
-    // overlay-escape (an Escape pressed with focus inside the page) runs this.
-    const closeHostOverlayRef = useRef<() => void>(() => {});
     // A key a person pressed in the page (forwardPageKeys), run on the frame's
     // element, where this document's shortcuts and Escape rungs see it as a
     // key pressed with focus in the page: a keydown only while the frame holds
@@ -1176,12 +1164,6 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     });
     createdIdsRef.current = hook.createdAnnotationIds;
     armLinkOfferRef.current = hook.armLinkOffer;
-    closeHostOverlayRef.current = () => {
-      if (hook.commentPopover) hook.handleCommentClose();
-      else if (hook.quickLabelPicker) hook.handleQuickLabelPickerDismiss();
-      else if (hook.toolbarState) hook.handleToolbarClose();
-      else if (globalCommentPopover) setGlobalCommentPopover(null);
-    };
 
     useEffect(() => {
       if (!bridgeReportedRef.current) return;
@@ -1327,14 +1309,6 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
           onAnnotateModeExitRef.current?.();
           return;
         }
-        // An Escape pressed in the page while one of our overlays is open
-        // (set-host-overlay): close it, as its own Escape would. A page posting
-        // this itself can only close an open overlay, whose words the draft
-        // store keeps.
-        if (isRecord(e.data) && e.data.type === `${PREFIX}overlay-escape`) {
-          closeHostOverlayRef.current();
-          return;
-        }
         if (isRecord(e.data) && e.data.type === `${PREFIX}annotate-toggle`) {
           onAnnotateModeToggleRef.current?.();
           return;
@@ -1371,15 +1345,6 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
           if (now - lastStepAtRef.current < STEP_MESSAGE_MIN_INTERVAL_MS) return;
           lastStepAtRef.current = now;
           onStepRef.current?.(dir);
-          return;
-        }
-        if (isRecord(e.data) && e.data.type === `${PREFIX}mode-key`) {
-          // Like page-escape, the page could post this itself: honored only
-          // while the frame holds focus, for a digit the host maps (1 to 4).
-          const digit = e.data.digit;
-          if (typeof digit !== "number" || !Number.isInteger(digit) || digit < 1 || digit > 4) return;
-          if (document.activeElement !== iframeRef.current) return;
-          onModeKeyRef.current?.(digit);
           return;
         }
         if (isRecord(e.data) && e.data.type === `${PREFIX}page-escape`) {
@@ -1605,25 +1570,12 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       );
     }, [iframeReadyVersion, annotateModeActive]);
 
-    // Shift+1 to Shift+4 inside the page pick the host's annotation mode, when
-    // the host takes them (onModeKey); otherwise the page keeps the keys.
-    const modeKeysWanted = Boolean(onModeKey);
-    useEffect(() => {
-      if (iframeReadyVersion === 0) return;
-      postToBridge({ type: `${PREFIX}set-mode-keys`, active: modeKeysWanted });
-    }, [iframeReadyVersion, modeKeysWanted]);
-
-    // Tell the bridge whether one of our overlays is open over the page (the
-    // comment composer, the markup toolbar, a quick-label picker, the global
-    // comment), so an Escape pressed with focus inside the page closes it, as
-    // Escape does in this document. Same re-post pattern as above.
+    // Whether one of our overlays is open over the page (the comment composer,
+    // the markup toolbar, a quick-label picker, the global comment): an Escape
+    // pressed in the page is then ours, as it is in this document.
     const hostOverlayOpen = Boolean(
       hook.commentPopover || hook.toolbarState || hook.quickLabelPicker || globalCommentPopover,
     );
-    useEffect(() => {
-      if (iframeReadyVersion === 0) return;
-      postToBridge({ type: `${PREFIX}set-host-overlay`, open: hostOverlayOpen });
-    }, [iframeReadyVersion, hostOverlayOpen]);
 
     // The page's keys, asked of the link guard (forwardPageKeys): its claims,
     // and Escape while one of these overlays is open. Asked again on every
@@ -1683,7 +1635,7 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     // stays in the draft store), and is used, so the next press reaches the
     // rest of the ladder. The composer's own fields and card keep their
     // Escape. Capture phase, so it runs before the Vim document-focus rung.
-    // Inside the iframe the bridge posts overlay-escape instead.
+    // An Escape pressed inside the page runs here too (forwardPageKeys).
     const handleCommentCloseRef = useRef(hook.handleCommentClose);
     handleCommentCloseRef.current = hook.handleCommentClose;
     const composerOpen = Boolean(hook.commentPopover) || Boolean(globalCommentPopover);
