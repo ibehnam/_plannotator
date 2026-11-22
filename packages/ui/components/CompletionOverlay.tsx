@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useAutoClose } from '../hooks/useAutoClose';
+import { useAutoClose, type HostCloseResult } from '../hooks/useAutoClose';
 
 // ---------------------------------------------------------------------------
 // Icons
@@ -45,10 +45,16 @@ interface CompletionOverlayProps {
    * or null: the done screen is exactly as before.
    */
   footer?: ReactNode;
+  /**
+   * Optional close by the host when the page's own `window.close()` is refused
+   * (the local server closing the tab through the browser). Omitted: the done
+   * screen says it could not close the tab, as before.
+   */
+  hostClose?: () => Promise<HostCloseResult>;
 }
 
-export function CompletionOverlay({ submitted, title, subtitle, agentLabel, links, footer }: CompletionOverlayProps) {
-  const { state, enableAndStart } = useAutoClose(!!submitted);
+export function CompletionOverlay({ submitted, title, subtitle, agentLabel, links, footer, hostClose }: CompletionOverlayProps) {
+  const { state, enableAndStart } = useAutoClose(!!submitted, hostClose);
 
   if (!submitted) return null;
 
@@ -110,8 +116,8 @@ export function CompletionOverlay({ submitted, title, subtitle, agentLabel, link
               <p className="text-sm text-muted-foreground">
                 Could not close this tab automatically. Please close it manually.
               </p>
-              <p className="text-xs text-muted-foreground/60">
-                Auto-close works when the tab is opened by {agentLabel}.
+              <p className="text-xs text-muted-foreground/60" data-close-hint>
+                {state.hint ?? `Auto-close works when the tab is opened by ${agentLabel}.`}
               </p>
             </>
           ) : (

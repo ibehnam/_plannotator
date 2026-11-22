@@ -6,6 +6,7 @@
  * launch a browser session, wait, and receive a structured JSON result.
  */
 
+import { handleCloseTabRequest } from "./close-tab";
 import { likelyAppHtmlEncoding, prewarmAppHtml } from "@plannotator/shared/app-html";
 import { openPackedApp, packedAppResponse } from "@plannotator/shared/packed-app";
 import type { Origin } from "@plannotator/shared/agents";
@@ -205,6 +206,10 @@ export async function startGoalSetupServer(
             }
           }
 
+          // The done screen's tab, closed from here when the page's own close is refused (close-tab.ts).
+          if (url.pathname === "/api/close-tab" && req.method === "POST") {
+            return handleCloseTabRequest(req, url);
+          }
           if (url.pathname === "/api/exit" && req.method === "POST") {
             resolveOnce({ exit: true });
             return Response.json({ ok: true });
