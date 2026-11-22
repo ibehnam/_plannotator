@@ -47,6 +47,10 @@ suites=(
   packages/server/close-tab.test.ts
   packages/ui/hooks/useAutoClose.test.tsx
   packages/ui/utils/annotationModes.test.ts
+  packages/editor/App.decisionControl.test.tsx
+  packages/ui/utils/inputMethod.test.ts
+  packages/ui/shortcuts.test.ts
+  apps/hook/server/annotate-command.test.ts
 )
 # Files upstream's sandbox refuses to run (scripts/test-sandbox.ts REFUSED).
 refused=(apps/pi-extension/inbox.test.ts tests/never-touch-the-real-inbox.test.ts)

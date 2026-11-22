@@ -33,18 +33,37 @@
     the bridge's `focus-vim`).
 14. Those, described in the agent guides (its own commit, as 5).
 15. **An HTML page opens in Interact** (App's `htmlAnnotateArmed`): its own controls answer the
-    first click, and `Mod+Shift+A` arms Annotate.
+    first click, and `Mod+Shift+A` arms Annotate. *Superseded by 23.*
 16. That, described in the agent guides (its own commit, as 5).
 17. **Escape closes a composer opened over an HTML page, wherever focus is** (the bridge's
-    `set-host-overlay` and `overlay-escape`; `release-focus` as the composer opens).
+    `set-host-overlay` and `overlay-escape`; `release-focus` as the composer opens). *Its key path is
+    superseded by 25 and 26; `release-focus` stays.*
 18. **The done screen's tab closes after a review that followed links** (`packages/server/close-tab.ts`:
     the server closes it through the browser's AppleScript on macOS).
 19. **An HTML page takes Markdown's annotation modes** (`utils/annotationModes`): the toolstrip above
     the page, Markup, Comment, Redline and Label with Shift+1 to 4, Delete and the label picker; a
-    pinned element opens the composer in Markup.
+    pinned element opens the composer in Markup. *Its `mode-key` path is superseded by 25 and 26.*
 20. Those, described in the agent guides (its own commit, as 5).
 21. **Escape closes a visible composer with focus on the app's body** (HtmlViewer's composer rung),
     as after a click back into an HTML page; described with 17 in the agent guides.
+22. **Mod+Enter is the header's primary** (App's `primaryAvailable`, read by the header, the compact
+    rows and the key): with a linked page open, annotate's Done sends, as the header shows it.
+23. **Select and Pinpoint are one remembered choice on every surface** (`utils/inputMethod`, one
+    cookie): an HTML or live-app page is armed in Pinpoint; the toolstrip, the compact control, the
+    Alt keys and `Mod+Shift+A` (Markdown too) set it, and Escape never does; no header pen, no
+    "Annotate page".
+24. **The Escape that closes a draft over an HTML page is used** (the bridge): one Escape, one rung.
+25. **A key pressed in an HTML page is the review's too** (the link guard's keys, HtmlViewer's
+    `forwardPageKeys`, `bindingDescriptor`, `pageKeyClaims`): the surface's Cmd chords, and Escape
+    while an overlay is open, are taken before the page; every other key the page did not use
+    follows; each runs the app's own handler, as on Markdown. The Inbox and live apps keep upstream's.
+26. **Patch 17's and 19's key messages retired**: the page's Escape and Shift+1 to 4 come through
+    the link guard.
+27. **The done screen's tab closes whatever opened it** (`close-tab.ts`'s held request and
+    `settleSession`, `useAutoClose`'s early ask): a tab that cannot close itself asks the server as
+    the done screen appears, the server closes it when the countdown ends and stays up for it; the
+    browsers are checked at once, and a timeout or an ended session says so.
+28. Those, described in the agent guides (its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
@@ -62,7 +81,7 @@
   releases came after it.
 - `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
   the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' twenty-two suites in upstream's test sandbox (`--full`: every unit
+  `bun run typecheck` and the patches' twenty-six suites in upstream's test sandbox (`--full`: every unit
   suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
   on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
   a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.
