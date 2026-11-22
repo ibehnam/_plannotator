@@ -28,6 +28,7 @@ import { LocalLinkContext, type LocalLinkResolver } from './LocalLinkContext';
 import { useValidatedCodePaths } from '../hooks/useValidatedCodePaths';
 import { AnnotationToolbar } from './AnnotationToolbar';
 import { FloatingQuickLabelPicker } from './FloatingQuickLabelPicker';
+import { selectionActionFor } from '../utils/annotationModes';
 
 /**
  * The diagram engine — the renderer slot, the canvas, the comment overlay,
@@ -1333,10 +1334,13 @@ export const Viewer = forwardRef<ViewerHandle, ViewerProps>(({
     const block = blocks.find((candidate) => candidate.id === blockId);
     const codeEl = element.querySelector('code');
     if (!block || !codeEl) return;
-    // In pinpoint mode, apply code block annotation based on current editor mode
-    if (modeRef.current === 'redline') {
+    // A pinned code block, by the rule every pinned element follows
+    // (utils/annotationModes): Redline deletes it, Label opens the picker,
+    // Markup and Comment open the composer.
+    const action = selectionActionFor(modeRef.current, { pinned: true });
+    if (action === 'delete') {
       applyCodeBlockAnnotation(blockId, codeEl, AnnotationType.DELETION);
-    } else if (modeRef.current === 'quickLabel') {
+    } else if (action === 'labelPicker') {
       setCodeBlockQuickLabelPicker({
         anchorEl: element,
         codeBlock: { block, element },

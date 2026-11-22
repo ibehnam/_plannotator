@@ -649,6 +649,9 @@ ${SANDBOX_SHIM_SCRIPT}
   // the markup toolbar, a quick-label picker, the global comment): Escape then
   // closes it wherever focus is, as it does in the host's own document.
   var hostOverlayOpen = false;
+  // Whether Shift+1 to Shift+4 pressed here pick the host's annotation mode
+  // (the host opted in: set-mode-keys); otherwise the page keeps the keys.
+  var modeKeysWanted = false;
   // A native host decides link navigations itself (HtmlViewer hostNavigates).
   var hostNavigates = false;
   // Forms and in-page links work as in a tab (the host's opt-in, \`pageNavigation\`).
@@ -1127,6 +1130,10 @@ ${SANDBOX_SHIM_SCRIPT}
 
     else if (type === PREFIX + 'set-host-overlay') {
       hostOverlayOpen = e.data.open === true;
+    }
+
+    else if (type === PREFIX + 'set-mode-keys') {
+      modeKeysWanted = e.data.active === true;
     }
 
     else if (type === PREFIX + 'release-focus') {
@@ -5126,14 +5133,17 @@ ${SANDBOX_SHIM_SCRIPT}
   window.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') escapeReachedWindow = e;
   });
+  // Whether a key went to one of the page's own text fields (an input, a
+  // textarea, a select, editable content), which keeps every key it gets.
+  function isTextEntryTarget(t) {
+    if (!t || t.nodeType !== 1) return false;
+    var tag = t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return true;
+    return !!(t.closest && t.closest('[contenteditable]:not([contenteditable="false"])'));
+  }
   function offerUnusedEscape(e) {
     if (e.repeat || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-    var t = e.target;
-    if (t && t.nodeType === 1) {
-      var tag = t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
-      if (t.closest && t.closest('[contenteditable]:not([contenteditable="false"])')) return;
-    }
+    if (isTextEntryTarget(e.target)) return;
     // The page's own dialog closes on this Escape (the browser's default, not a handler).
     if (document.querySelector('dialog[open]')) return;
     setTimeout(function() {
@@ -6416,6 +6426,22 @@ ${SANDBOX_SHIM_SCRIPT}
     hidePinpointLabel();
     updateVimUi();
   }, true);
+
+  // --- Annotation modes ---
+  // Shift+1 to Shift+4 pick the host's annotation mode (Markup, Comment,
+  // Redline, Label), as the same keys do outside the page. Not while a
+  // selection is pending (its toolbar's type-to-comment owns typed keys, as on
+  // a Markdown page), nor in one of the page's own fields, nor with another
+  // modifier held.
+  document.addEventListener('keydown', function(e) {
+    if (!modeKeysWanted || pendingSelection) return;
+    if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    var digit = /^Digit([1-4])$/.exec(e.code || '');
+    if (!digit) return;
+    if (isTextEntryTarget(e.target)) return;
+    e.preventDefault();
+    postToParent({ type: PREFIX + 'mode-key', digit: Number(digit[1]) });
+  });
 
   // --- Type-to-comment ---
   // While a selection is pending, focus is inside this iframe, so the parent's

@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, type RefObject } from "react";
 import { AnnotationType, type Annotation, type EditorMode, type HostDraft, type HtmlAnnotationTarget, type HtmlElementAnchor, type HtmlElementContext, type HtmlTextPosition, type ImageAttachment } from "../../types";
 import { THUMBS_UP_LABEL, type QuickLabel } from "../../utils/quickLabels";
+import { quickLabelText, selectionActionFor } from "../../utils/annotationModes";
 import { getIdentity } from "../../utils/identity";
 import type {
   ToolbarState,
@@ -693,6 +694,15 @@ export function useHtmlAnnotation({
   const pendingContextRef = useRef<HtmlElementContext | null>(null);
   // Where the pending text selection stands, with its quote (positionOn).
   const pendingPositionRef = useRef<{ text: string; position: HtmlTextPosition } | null>(null);
+  // The pending selection's target key (its draft's key), and the element it
+  // pinned, which becomes a composer's primary target and arms multi-select
+  // whichever way the composer opens (directly, or from the toolbar).
+  const pendingTargetKeyRef = useRef<string | undefined>(undefined);
+  const pendingPinRef = useRef<HtmlDraftTarget | null>(null);
+  // The message handler's way to the composer and to an immediate deletion,
+  // both defined below it.
+  const openComposerRef = useRef<(options?: { initialText?: string; reopen?: { id: string; text: string } | null }) => void>(() => {});
+  const annotateRef = useRef<(type: AnnotationType) => void>(() => {});
   const draftTargetsRef = useRef<HtmlDraftTarget[]>(draftTargets);
   draftTargetsRef.current = draftTargets;
   const onBridgePointerRef = useRef(onBridgePointer);
@@ -964,8 +974,8 @@ export function useHtmlAnnotation({
         if (reopen) reopenRef.current = null;
         const reportDraft = onHostDraftRef.current;
         if (reportDraft) {
-          // The host composes: HTML is comment-only, so every selection or
-          // pin is a comment draft, and nothing of ours opens.
+          // The host composes (the Inbox): every selection or pin is a
+          // comment draft for its composer, and nothing of ours opens.
           const id = nextHtmlAnnId();
           hostDraftIdRef.current = id;
           reportDraft({
@@ -999,63 +1009,35 @@ export function useHtmlAnnotation({
         const anchor = positionAnchor(message.rect);
         if (!anchor) return;
 
-        // HTML and live-app surfaces are COMMENT-ONLY: redline (auto-DELETION)
-        // and quickLabel are markdown-surface features, so both the host's
-        // mode and any bridge-posted modeOverride clamp to the plain selection
-        // flow here (a hostile page can post modeOverride, so the clamp sits
-        // at the trust boundary, not in the host). Persisted DELETION
-        // annotations still restore through applyAnnotations — only CREATION
-        // is comment-only.
-        const requestedMode = message.modeOverride ?? modeRef.current;
-        const currentMode =
-          requestedMode === "redline" || requestedMode === "quickLabel"
-            ? "selection"
-            : requestedMode;
-
-        if (
-          currentMode === "comment"
-          // Pinpoint click-to-pin: the click already chose the target, so skip
-          // the intermediate toolbar and go straight to the comment composer.
-          || (message.pinpoint && currentMode === "selection")
-          // A host's reopenComment: the comment was being written, so it opens again.
-          || reopen
-        ) {
-          // Release iframe focus so the popover's textarea autofocus lands in the
-          // parent (otherwise the iframe keeps focus and swallows further keys):
-          // blur the element here, and have the page's own document let go, which
-          // the blur alone does not make it do.
-          iframeRef.current?.blur();
-          post({ type: `${PREFIX}release-focus` });
-          setCommentPopover({
-            anchorEl: anchor,
-            contextText: message.text,
-            selectedText: message.text,
-            // A reopened comment holds the host's words, under its own key so
-            // no older draft of the same pin and quote takes their place.
-            ...(reopen ? { initialText: reopen.text } : {}),
-            draftKey: htmlCommentDraftKey(message.text, message.anchor, message.targetKey) + (reopen ? `:reopen:${reopen.id}` : ""),
-          });
-          // Pinpoint drafts arm shift-click multi-select: the clicked element
-          // becomes the primary target of the (single) draft comment. The
-          // bridge only accepts shift-toggles once THIS explicit arm arrives,
-          // so drafts the composer does not mirror (quickLabel, redline) can
-          // never accumulate pins the saved annotation would not carry.
-          if (message.pinpoint && message.targetKey) {
-            setDraftTargets([
-              {
-                key: message.targetKey,
-                label: message.targetLabel,
-                text: message.text,
-                anchor: message.anchor ?? null,
-                context: message.context,
-              },
-            ]);
-            post({
-              type: `${PREFIX}arm-multi-select`,
+        // One decision for every surface (utils/annotationModes): Markup opens
+        // the toolbar (the composer for a pinned element, which already chose
+        // its target), Comment the composer, Redline marks the text deleted at
+        // once, Label opens the quick-label picker. The host's own mode (the
+        // toolstrip, Shift+1 to 4) is honored whole. A page may post a one-shot mode (the Vim keys); since
+        // it could post one itself, it may not force a deletion the person did
+        // not choose, so its redline opens the toolbar instead.
+        pendingTargetKeyRef.current = message.targetKey;
+        pendingPinRef.current = message.pinpoint && message.targetKey
+          ? {
               key: message.targetKey,
-              ...(hostCapRef.current ? { max: maxTargetsRef.current } : {}),
-            });
-          }
+              label: message.targetLabel,
+              text: message.text,
+              anchor: message.anchor ?? null,
+              context: message.context,
+            }
+          : null;
+        const pageMode = message.modeOverride === "redline" ? "selection" : message.modeOverride;
+        const action = reopen ? "composer" : selectionActionFor(pageMode ?? modeRef.current, { pinned: Boolean(message.pinpoint) });
+        if (action === "delete") {
+          annotateRef.current(AnnotationType.DELETION);
+          return;
+        }
+        if (action === "labelPicker") {
+          setQuickLabelPicker({ anchorEl: anchor });
+          return;
+        }
+        if (action === "composer") {
+          openComposerRef.current({ reopen });
         } else {
           setToolbarState({
             element: anchor,
@@ -1197,18 +1179,7 @@ export function useHtmlAnnotation({
         const key = message.key;
         const text = pendingTextRef.current;
         if (!key || !text) return;
-        const anchor = anchorRef.current ?? getOrCreateAnchor();
-        // Release iframe focus so the popover textarea can take it (and the rest of
-        // the typing) — otherwise the iframe keeps focus and the bridge eats keys.
-        iframeRef.current?.blur();
-        setToolbarState(null);
-        setCommentPopover({
-          anchorEl: anchor,
-          contextText: text,
-          selectedText: text,
-          initialText: key,
-          draftKey: htmlCommentDraftKey(text, pendingAnchorRef.current),
-        });
+        openComposerRef.current({ initialText: key });
       }
 
       if (type === `${PREFIX}mark-click`) {
@@ -1319,23 +1290,56 @@ export function useHtmlAnnotation({
     },
     [post],
   );
+  annotateRef.current = handleAnnotate;
+
+  // The comment composer on the pending selection: from a selection in Comment
+  // mode (or a comment its host reopened), from the toolbar's Comment, and from
+  // a key typed over the toolbar. A pinned element becomes the draft's primary
+  // target and arms shift-click multi-select whichever way it opened; the
+  // bridge accepts shift-toggles only once this explicit arm arrives, so a
+  // draft the composer does not mirror (a label, a deletion) never gathers pins.
+  const openComposer = useCallback(
+    (options: { initialText?: string; reopen?: { id: string; text: string } | null } = {}) => {
+      const text = pendingTextRef.current;
+      if (!text) return;
+      const anchorEl = anchorRef.current ?? getOrCreateAnchor();
+      const reopen = options.reopen ?? null;
+      const pin = pendingPinRef.current;
+      // Release iframe focus so the popover's textarea autofocus lands in the
+      // parent (otherwise the iframe keeps focus and swallows further keys):
+      // blur the element here, and have the page's own document let go, which
+      // the blur alone does not make it do.
+      iframeRef.current?.blur();
+      post({ type: `${PREFIX}release-focus` });
+      setToolbarState(null);
+      setCommentPopover({
+        anchorEl,
+        contextText: text,
+        selectedText: text,
+        // A reopened comment holds the host's words, under its own key so no
+        // older draft of the same pin and quote takes their place.
+        ...(reopen ? { initialText: reopen.text } : options.initialText !== undefined ? { initialText: options.initialText } : {}),
+        draftKey: htmlCommentDraftKey(text, pendingAnchorRef.current, pendingTargetKeyRef.current) + (reopen ? `:reopen:${reopen.id}` : ""),
+      });
+      if (pin) {
+        setDraftTargets([pin]);
+        post({
+          type: `${PREFIX}arm-multi-select`,
+          key: pin.key,
+          ...(hostCapRef.current ? { max: maxTargetsRef.current } : {}),
+        });
+      }
+    },
+    [getOrCreateAnchor, iframeRef, post],
+  );
+  openComposerRef.current = openComposer;
 
   const handleRequestComment = useCallback(
     (initialChar?: string) => {
       if (!enabledRef.current) return;
-      const text = pendingTextRef.current;
-      if (!text) return;
-      const anchor = anchorRef.current ?? getOrCreateAnchor();
-      setToolbarState(null);
-      setCommentPopover({
-        anchorEl: anchor,
-        contextText: text,
-        selectedText: text,
-        initialText: initialChar,
-        draftKey: htmlCommentDraftKey(text, pendingAnchorRef.current),
-      });
+      openComposer({ initialText: initialChar });
     },
-    [getOrCreateAnchor],
+    [openComposer],
   );
 
   // One commit path for everything the pinpoint composer submits (a typed
@@ -1405,15 +1409,14 @@ export function useHtmlAnnotation({
     [commitComposerDraft],
   );
 
-  // The composer's one-click 👍. A pinpoint click opens this composer
-  // directly and never shows the selection toolbar, so without it a reviewer
-  // could not mark an element "looks good" in one click. Emits the same
-  // hardcoded positive label as the toolbar's 👍 (the only label comment-only
-  // surfaces may create), on the pinned element(s).
+  // The composer's one-click 👍. A pinned element opens this composer
+  // directly in Markup and never shows the selection toolbar, so without it a
+  // reviewer could not mark an element "looks good" in one click. Emits the
+  // same label as the toolbar's 👍, on the pinned element(s).
   const handleCommentLooksGood = useCallback(
     () =>
       commitComposerDraft({
-        text: THUMBS_UP_LABEL.text,
+        text: quickLabelText(THUMBS_UP_LABEL),
         isQuickLabel: true,
         quickLabelTip: THUMBS_UP_LABEL.tip,
       }),
@@ -1467,7 +1470,7 @@ export function useHtmlAnnotation({
         startOffset: 0,
         endOffset: 0,
         type: AnnotationType.COMMENT,
-        text: label.text,
+        text: quickLabelText(label),
         originalText: text,
         isQuickLabel: true,
         quickLabelTip: label.tip,

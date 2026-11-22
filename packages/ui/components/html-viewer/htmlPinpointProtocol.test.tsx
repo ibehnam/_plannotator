@@ -16,6 +16,7 @@ import type { Annotation } from '../../types';
 import { AnnotationType } from '../../types';
 import { BRIDGE_PROTOCOL_VERSION } from './bridge-script';
 import { THUMBS_UP_LABEL } from '../../utils/quickLabels';
+import { quickLabelText } from '../../utils/annotationModes';
 
 const hasDom = typeof document !== 'undefined';
 const hookModule = hasDom ? await import('./useHtmlAnnotation') : null;
@@ -244,7 +245,7 @@ describe.if(hasDom)('parseBridgeMessage selection additions', () => {
 
 describe.if(hasDom)('pinpoint click-to-pin flow', () => {
   async function mountViewer(options: {
-    mode: 'selection' | 'redline' | 'comment';
+    mode: 'selection' | 'redline' | 'comment' | 'quickLabel';
     onAdd: (ann: Annotation) => void;
   }) {
     if (!htmlViewerModule) throw new Error('DOM test environment is not registered');
@@ -455,10 +456,7 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
   });
 
 
-  test('the HTML selection toolbar is comment-only plus the restored thumbs-up: no Delete, no label picker', async () => {
-    // The restricted restore: exactly ONE label affordance (the hardcoded
-    // 👍 "Looks good") came back to HTML surfaces. Delete and the Zap
-    // picker staying gone is what preserves the comment-only ruling.
+  test('the HTML selection toolbar is the Markdown one: Delete, Comment, the thumbs-up and the label picker', async () => {
     const { postSelection } = await mountViewer({ mode: 'selection', onAdd: () => {} });
     await postSelection({ ...selectionMessage, anchor: undefined });
     const toolbar = document.querySelector('.annotation-toolbar');
@@ -466,8 +464,51 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     const titles = Array.from(toolbar.querySelectorAll('button')).map((b) => b.title);
     expect(titles).toContain('Comment');
     expect(titles).toContain('Looks good');
-    expect(titles).not.toContain('Delete');
-    expect(titles).not.toContain('Quick label');
+    expect(titles).toContain('Delete');
+    expect(titles).toContain('Quick label');
+  });
+
+  test("the toolbar's Delete marks the selected text deleted: a DELETION on its anchor, painted by the bridge", async () => {
+    const added: Annotation[] = [];
+    const { postSelection, postedToIframe } = await mountViewer({ mode: 'selection', onAdd: (ann) => added.push(ann) });
+    await postSelection(selectionMessage);
+    const remove = Array.from(document.querySelectorAll<HTMLButtonElement>('.annotation-toolbar button')).find((b) => b.title === 'Delete');
+    if (!remove) throw new Error('Delete missing');
+    await act(async () => remove.click());
+    expect(added).toHaveLength(1);
+    expect(added[0]!.type).toBe(AnnotationType.DELETION);
+    expect(added[0]!.originalText).toBe('Pinpoint target');
+    expect(added[0]!.htmlAnchor).toEqual(selectionMessage.anchor);
+    expect(postedToIframe.some((m) => m.type === 'plannotator-bridge-create-mark' && m.annotationType === 'deletion')).toBe(true);
+    expect(document.querySelector('.annotation-toolbar')).toBeNull();
+  });
+
+  test('Redline mode marks a dragged selection deleted at once, as on a Markdown page: no toolbar, no composer', async () => {
+    const added: Annotation[] = [];
+    const { postSelection, postedToIframe } = await mountViewer({ mode: 'redline', onAdd: (ann) => added.push(ann) });
+    await postSelection(selectionMessage);
+    expect(added).toHaveLength(1);
+    expect(added[0]!.type).toBe(AnnotationType.DELETION);
+    expect(added[0]!.originalText).toBe('Pinpoint target');
+    expect(postedToIframe.some((m) => m.type === 'plannotator-bridge-create-mark' && m.annotationType === 'deletion')).toBe(true);
+    expect(document.querySelector('.annotation-toolbar')).toBeNull();
+    expect(document.querySelector('[data-comment-popover]')).toBeNull();
+  });
+
+  test('Label mode opens the quick-label picker, and a label picked there is a quick-label comment with its emoji, as on a Markdown page', async () => {
+    const added: Annotation[] = [];
+    const { postSelection } = await mountViewer({ mode: 'quickLabel', onAdd: (ann) => added.push(ann) });
+    await postSelection(selectionMessage);
+    const picker = document.querySelector('[data-quick-label-picker]');
+    if (!picker) throw new Error('quick-label picker missing');
+    const first = picker.querySelector<HTMLButtonElement>('button');
+    if (!first) throw new Error('no label in the picker');
+    await act(async () => first.click());
+    expect(added).toHaveLength(1);
+    expect(added[0]!.type).toBe(AnnotationType.COMMENT);
+    expect(added[0]!.isQuickLabel).toBe(true);
+    expect(added[0]!.text).toMatch(/^\S+ \S/);
+    expect(document.querySelector('[data-quick-label-picker]')).toBeNull();
   });
 
   test('the toolbar thumbs-up creates an isQuickLabel comment annotation', async () => {
@@ -487,7 +528,8 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     expect(added).toHaveLength(1);
     expect(added[0]?.type).toBe(AnnotationType.COMMENT);
     expect(added[0]?.isQuickLabel).toBe(true);
-    expect(added[0]?.text).toBe('Looks good');
+    // The same text a Markdown page's label has: its emoji, then its words.
+    expect(added[0]?.text).toBe(quickLabelText(THUMBS_UP_LABEL));
   });
 
   function composerThumbsUp(): HTMLButtonElement | null {
@@ -516,7 +558,7 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     expect(added).toHaveLength(1);
     expect(added[0]!.type).toBe(AnnotationType.COMMENT);
     expect(added[0]!.isQuickLabel).toBe(true);
-    expect(added[0]!.text).toBe(THUMBS_UP_LABEL.text);
+    expect(added[0]!.text).toBe(quickLabelText(THUMBS_UP_LABEL));
     expect(added[0]!.quickLabelTip).toBe(THUMBS_UP_LABEL.tip);
     expect(added[0]!.originalText).toBe('Pinpoint target');
     expect(added[0]!.htmlAnchor).toEqual(selectionMessage.anchor);
@@ -549,16 +591,17 @@ describe.if(hasDom)('pinpoint click-to-pin flow', () => {
     expect(added[0]!.isQuickLabel).toBeUndefined();
   });
 
-  test('redline mode is CLAMPED on HTML surfaces: a pinpoint selection opens the composer instead of auto-deleting', async () => {
+  test('Redline mode marks a pinned element deleted at once, as a pinned code block is on a Markdown page', async () => {
     const added: Annotation[] = [];
     const { postSelection } = await mountViewer({
       mode: 'redline',
       onAdd: (ann) => added.push(ann),
     });
     await postSelection({ ...selectionMessage, pinpoint: true });
-    // No DELETION was created; the comment composer owns the draft.
-    expect(added.length).toBe(0);
-    expect(document.querySelector('[data-comment-popover]')).not.toBeNull();
+    expect(added).toHaveLength(1);
+    expect(added[0]!.type).toBe(AnnotationType.DELETION);
+    expect(added[0]!.htmlAnchor).toEqual(selectionMessage.anchor);
+    expect(document.querySelector('[data-comment-popover]')).toBeNull();
   });
 
   test('a bridge-posted modeOverride "redline" cannot force a DELETION (trust-boundary clamp)', async () => {
@@ -1234,21 +1277,12 @@ describe.if(hasDom)('multi-target composer flow (chips, promotion, submit)', () 
     });
   });
 
-  test('quickLabel mode is CLAMPED on HTML surfaces: the pinpoint draft opens the composer and arms like any pinpoint draft', async () => {
-    // Quick labels are a markdown-surface feature. On HTML surfaces the mode
-    // clamps to the plain selection flow, so a pinpoint draft opens the
-    // composer (which mirrors targets) — never the label picker. This also
-    // keeps the D1 invariant vacuously safe: every pinpoint draft that arms
-    // the bridge is mirrored by the composer.
+  test('Label mode on a pinned element opens the label picker and arms no multi-select: only the composer mirrors targets (D1)', async () => {
     const quick = await mountViewer(() => {}, 'quickLabel');
     await quick.post(primarySelection());
-    expect(document.querySelector('[data-comment-popover]')).not.toBe(null);
-    expect(quick.postedToIframe).toContainEqual({
-      type: 'plannotator-bridge-arm-multi-select',
-      key: 'ht-1',
-    });
-    await quick.post(addedTarget('ht-2', 'Create'));
-    expect(chips().length).toBe(2);
+    expect(document.querySelector('[data-quick-label-picker]')).not.toBe(null);
+    expect(document.querySelector('[data-comment-popover]')).toBe(null);
+    expect(quick.postedToIframe.some((m) => m.type === 'plannotator-bridge-arm-multi-select')).toBe(false);
   });
 
   test('a forged multi-target-removed still echoes remove-target to resync the bridge (D4)', async () => {
@@ -1711,6 +1745,7 @@ describe.if(hasDom)('Interact/Annotate mode on static (srcdoc) surfaces', () => 
     onStep?: (dir: 1 | -1) => void;
     stepInInteract?: boolean;
     onPageEscape?: () => void;
+    onModeKey?: (digit: number) => void;
   } = {}) {
     if (!htmlViewerModule) throw new Error('DOM test environment is not registered');
     const HtmlViewer = htmlViewerModule.HtmlViewer;
@@ -1734,6 +1769,7 @@ describe.if(hasDom)('Interact/Annotate mode on static (srcdoc) surfaces', () => 
           onStep={options.onStep}
           stepInInteract={options.stepInInteract}
           onPageEscape={options.onPageEscape}
+          onModeKey={options.onModeKey}
         />,
       );
     });
@@ -1883,6 +1919,27 @@ describe.if(hasDom)('Interact/Annotate mode on static (srcdoc) surfaces', () => 
     await act(async () => { frames[frames.length - 1]!.focus(); });
     await second.post({ type: 'plannotator-bridge-page-escape' });
     expect(armed).toEqual([]);
+  });
+
+  test("Shift+1 to 4 inside the page pick the host's mode: the bridge is asked for the keys when the host takes them, and a key counts only for 1 to 4 with the frame focused", async () => {
+    const digits: number[] = [];
+    const { post, postedToIframe } = await mountModeViewer({ onModeKey: (digit) => digits.push(digit) });
+    await post({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
+    expect(postedToIframe.filter((m) => m.type === 'plannotator-bridge-set-mode-keys').map((m) => m.active)).toEqual([true]);
+    const iframe = document.querySelector<HTMLIFrameElement>('iframe')!;
+    await post({ type: 'plannotator-bridge-mode-key', digit: 3 });
+    expect(digits).toEqual([]);
+    await act(async () => { iframe.focus(); });
+    await post({ type: 'plannotator-bridge-mode-key', digit: 3 });
+    await post({ type: 'plannotator-bridge-mode-key', digit: 9 });
+    await post({ type: 'plannotator-bridge-mode-key', digit: '2' });
+    expect(digits).toEqual([3]);
+  });
+
+  test('a host that does not take the mode keys leaves them to the page', async () => {
+    const { post, postedToIframe } = await mountModeViewer();
+    await post({ type: 'plannotator-bridge-ready', protocolVersion: BRIDGE_PROTOCOL_VERSION });
+    expect(postedToIframe.filter((m) => m.type === 'plannotator-bridge-set-mode-keys').map((m) => m.active)).toEqual([false]);
   });
 });
 

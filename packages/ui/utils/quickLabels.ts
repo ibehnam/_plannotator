@@ -33,9 +33,9 @@ export const LABEL_COLOR_MAP: Record<string, { bg: string; text: string; darkTex
 
 /**
  * The hardcoded one-click positive label behind the 👍 "Looks good" buttons
- * (the selection toolbar's and the HTML pinpoint composer's). Deliberately NOT part of the
- * configurable set: it is the ONLY label comment-only surfaces (HTML /
- * live-app) may emit — their restricted handlers filter on this id.
+ * (the selection toolbar's and the HTML pinpoint composer's). Deliberately NOT
+ * part of the configurable set, so the one-click 👍 is there whatever labels
+ * the reviewer configured.
  */
 export const THUMBS_UP_LABEL: QuickLabel = {
   id: 'thumbs-up',
