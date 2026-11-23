@@ -19,6 +19,7 @@ export {
   formatBridgeProtocolWarning,
   type BridgeProtocolVerdict,
   type HtmlContentWidth,
+  type HtmlPagePlace,
   type HtmlScrollClear,
 } from "./useHtmlAnnotation";
 export {

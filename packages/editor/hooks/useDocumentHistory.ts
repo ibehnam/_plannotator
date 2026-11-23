@@ -21,6 +21,11 @@
  * - It observes the open document rather than wrapping each way of opening
  *   one: a link, a backlink, the file browser, the bundle switcher, a jump to
  *   a comment and WebMCP all become entries the same way.
+ * - Each entry keeps where the reader was on its page (`plannotatorPlace`, as
+ *   the host measures it), as the browser keeps each entry's scroll: written
+ *   while the reader moves, at once before another page opens or the tab
+ *   unloads, and given back when a step, a reload or a pasted entry shows
+ *   that page again. Two entries of one page keep a place each.
  *
  * The open document is the host's; this hook only opens the one an entry
  * names, through the host's own router.
@@ -40,6 +45,8 @@ export interface DocumentHistoryEntry {
   prev?: string | null;
   /** The document of the entry after it, while one is ahead. */
   next?: string | null;
+  /** Where the reader was on this entry's page when it was last on screen (the host's measure; null: its top). */
+  place?: unknown;
 }
 
 const DOC = 'plannotatorDoc';
@@ -47,7 +54,8 @@ const INDEX = 'plannotatorIndex';
 const PREV = 'plannotatorPrev';
 const NEXT = 'plannotatorNext';
 const SESSION = 'plannotatorSession';
-const OURS = [DOC, INDEX, PREV, NEXT, SESSION];
+const PLACE = 'plannotatorPlace';
+const OURS = [DOC, INDEX, PREV, NEXT, SESSION, PLACE];
 
 /** First segments the server or a share link answers itself (`/api/…`, `/assets/…`, `/p/<id>`). */
 const RESERVED_FIRST_SEGMENTS = new Set(['api', 'assets', 'p']);
@@ -55,6 +63,8 @@ const RESERVED_FIRST_SEGMENTS = new Set(['api', 'assets', 'p']);
 const RESERVED_PATHS = new Set(['favicon.ico', 'favicon.png']);
 /** How long a step this hook asked for may take to land before another is taken (one that lands nowhere never does). */
 const STEP_WAIT_MS = 1000;
+/** A moving reader's place is written into the entry at most this often, and this long after the last move. */
+const PLACE_WRITE_MS = 200;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -81,6 +91,7 @@ export function readHistoryEntry(state: unknown): DocumentHistoryEntry | null {
   if (PREV in state && isDocValue(state[PREV])) entry.prev = state[PREV] as string | null;
   if (NEXT in state && isDocValue(state[NEXT])) entry.next = state[NEXT] as string | null;
   if (typeof state[SESSION] === 'string') entry.session = state[SESSION] as string;
+  if (state[PLACE] !== undefined) entry.place = state[PLACE];
   return entry;
 }
 
@@ -97,6 +108,7 @@ export function historyStateWith(state: unknown, entry: DocumentHistoryEntry): R
   if (entry.prev !== undefined) out[PREV] = entry.prev;
   if (entry.next !== undefined) out[NEXT] = entry.next;
   if (entry.session !== undefined) out[SESSION] = entry.session;
+  if (entry.place !== undefined) out[PLACE] = entry.place;
   return out;
 }
 
@@ -203,10 +215,23 @@ export interface UseDocumentHistoryOptions {
    * the same port, in the same tab) is no entry of this review's.
    */
   session: string | null;
-  /** Opens DOC the way the host opens any document (resolves when the open has ended, opened or not). */
+  /**
+   * Opens DOC the way the host opens any document (resolves when the open has
+   * ended, opened or not). `restoreScroll`: the host puts the reader back by
+   * its own memory, false when this hook gives the entry's place instead.
+   */
   open: (doc: string, options: { restoreScroll: boolean }) => Promise<void> | void;
-  /** Shows the root again, at the reader's place in it. */
-  showRoot: () => Promise<void> | void;
+  /** Shows the root again; `restoreScroll` as for `open`. */
+  showRoot: (options: { restoreScroll: boolean }) => Promise<void> | void;
+  /**
+   * Where the reader is on the page on screen, kept by its entry (null: its
+   * top; undefined: nothing to measure, the entry keeps what it had). With
+   * `restorePlace`, each entry gives its own place back; without, the host's
+   * open restores by its own memory.
+   */
+  capturePlace?: () => unknown;
+  /** Puts the reader at PLACE (null: the top) on the page just shown for an entry. */
+  restorePlace?: (place: unknown) => void;
   /** Whether a document named only by a typed or pasted address may be opened (a kind Plannotator annotates). */
   opensFromAddress: (doc: string) => boolean;
   /** The tab's own by default; tests pass their own. */
@@ -231,12 +256,18 @@ export interface DocumentHistory {
   forward: () => void;
   /** Moves DELTA entries, never before the review's first, one step at a time (a call while a step is landing is dropped). */
   go: (delta: number) => void;
+  /** The reader moved on the page on screen: its entry keeps the place, written at most every PLACE_WRITE_MS. */
+  placeMoved: () => void;
+  /** Writes the page on screen's place into its entry now (before another page replaces it). */
+  keepPlace: () => void;
 }
 
 interface PendingOpen {
   /** The document this hook asked for (null: the root). */
   doc: string | null;
   seq: number;
+  /** The place to give back once it is on screen (null: the top); undefined: the host's open restores. */
+  place: unknown;
 }
 
 export function useDocumentHistory(options: UseDocumentHistoryOptions): DocumentHistory {
@@ -295,20 +326,57 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
     remember(next);
   }, [remember]);
 
-  // Asks the host for the page ENTRY names; the activation that follows is
-  // that entry's, never a new one. Resolves `settled` when the open ends.
-  const openEntry = useCallback((doc: string | null) => {
+  // Asks the host for the page an entry names; the activation that follows is
+  // that entry's, never a new one, and gets the entry's PLACE back (absent:
+  // the top). Resolves `settled` when the open ends.
+  const openEntry = useCallback((doc: string | null, place?: unknown) => {
     const seq = ++seqRef.current;
-    pendingRef.current = { doc, seq };
-    const { open, showRoot } = optionsRef.current;
+    const { open, showRoot, restorePlace } = optionsRef.current;
+    const restoreScroll = restorePlace === undefined;
+    pendingRef.current = { doc, seq, place: restoreScroll ? undefined : place ?? null };
     const done = () => { if (seqRef.current === seq) setSettled(seq); };
     let opening: Promise<void> | void;
     try {
-      opening = doc === null ? showRoot() : open(doc, { restoreScroll: true });
+      opening = doc === null ? showRoot({ restoreScroll }) : open(doc, { restoreScroll });
     } catch {
       opening = undefined;
     }
     void Promise.resolve(opening).catch(() => {}).then(done);
+  }, []);
+
+  // The reader's place on the page on screen, into its entry: only while that
+  // page is the entry's and no step is opening another (a move then is the
+  // page the step leaves, whose entry is no longer on top).
+  const placeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPlaceWrite = useCallback(() => {
+    if (placeTimerRef.current !== null) clearTimeout(placeTimerRef.current);
+    placeTimerRef.current = null;
+  }, []);
+  const writePlace = useCallback(() => {
+    cancelPlaceWrite();
+    const { enabled: on, capturePlace } = optionsRef.current;
+    if (!on || !mountedRef.current || pendingRef.current || !capturePlace) return;
+    const h = historyOf();
+    const at = ownEntry(h.state);
+    if (!at || !sameDocument(at.doc, currentRef.current)) return;
+    const place = capturePlace();
+    if (place === undefined) return;
+    try {
+      h.replaceState(historyStateWith(h.state, { ...at, place }), '');
+    } catch {
+      // A state the browser will not keep: the entry keeps what it had.
+    }
+  }, [cancelPlaceWrite, ownEntry]);
+  const placeMoved = useCallback(() => {
+    if (placeTimerRef.current === null) placeTimerRef.current = setTimeout(writePlace, PLACE_WRITE_MS);
+  }, [writePlace]);
+  useEffect(() => cancelPlaceWrite, [cancelPlaceWrite]);
+  const restoreEntryPlace = useCallback((place: unknown) => {
+    try {
+      optionsRef.current.restorePlace?.(place ?? null);
+    } catch {
+      // The host could not put the reader back: the page stays where it is.
+    }
   }, []);
 
   useLayoutEffect(() => {
@@ -326,7 +394,9 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
         remember(tagged);
         if (!sameDocument(tagged.doc, currentRef.current)) {
           restoresPageRef.current = tagged.doc !== null;
-          openEntry(tagged.doc);
+          openEntry(tagged.doc, tagged.place);
+        } else if (tagged.place !== undefined) {
+          restoreEntryPlace(tagged.place);
         }
         return;
       }
@@ -354,7 +424,11 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
         // The page asked for, as the server spells it (or, for the root of a
         // review of several files, the file shown in its place).
         if (pending.doc === null || sameDocument(shown, pending.doc)) {
-          if (!sameDocument(shown, at.doc)) replaceEntry({ ...at, doc: shown }, addressFor(shown, base, loc.search));
+          // The root of a review of several files shows a file in its place: a
+          // page the entry's place was not measured on, so it opens at its top.
+          const moved = !sameDocument(shown, at.doc);
+          if (moved) replaceEntry({ ...at, doc: shown, place: undefined }, addressFor(shown, base, loc.search));
+          if (pending.place !== undefined) restoreEntryPlace(moved ? null : pending.place);
           return;
         }
         // Another document won the race (the reviewer's own): it is a new entry.
@@ -362,7 +436,7 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
         // The open ended and nothing activated: it failed. The address goes
         // back to the page on screen.
         pendingRef.current = null;
-        if (!sameDocument(shown, at.doc)) replaceEntry({ ...at, doc: shown }, addressFor(shown, base, loc.search));
+        if (!sameDocument(shown, at.doc)) replaceEntry({ ...at, doc: shown, place: undefined }, addressFor(shown, base, loc.search));
         return;
       } else {
         return;
@@ -372,7 +446,7 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
     if (sameDocument(shown, at.doc)) return;
     if (replaceNextRef.current) {
       replaceNextRef.current = false;
-      replaceEntry({ ...at, doc: shown }, addressFor(shown, base, loc.search));
+      replaceEntry({ ...at, doc: shown, place: undefined }, addressFor(shown, base, loc.search));
       return;
     }
     const address = addressFor(shown, base, loc.search);
@@ -387,25 +461,37 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
     }
     remember(next);
     // `current` is read through its ref; `settled` re-runs the check when an open this hook asked for ends.
-  }, [enabled, ready, current, settled, base, rootFile, openEntry, ownEntry, remember, replaceEntry]);
+  }, [enabled, ready, current, settled, base, rootFile, openEntry, ownEntry, remember, replaceEntry, restoreEntryPlace]);
 
   useLayoutEffect(() => {
     if (!enabled) return;
     const target = optionsRef.current.eventTarget ?? window;
     const onPopState = (event: PopStateEvent) => {
       stepLanded();
+      // A place still to be written was the page this step leaves; its entry is no longer on top.
+      cancelPlaceWrite();
       if (!mountedRef.current) return;
       const popped = ownEntry(event.state);
       if (!popped) return;
       remember(popped);
-      // The page on screen already, with nothing on its way: nothing to open.
-      // An open still on its way is overtaken by opening this entry's page.
-      if (sameDocument(popped.doc, currentRef.current) && !pendingRef.current) return;
-      openEntry(popped.doc);
+      // The page on screen already, with nothing on its way: nothing to open,
+      // only the entry's place to give back. An open still on its way is
+      // overtaken by opening this entry's page.
+      if (sameDocument(popped.doc, currentRef.current) && !pendingRef.current) {
+        restoreEntryPlace(popped.place);
+        return;
+      }
+      openEntry(popped.doc, popped.place);
     };
+    // A reload or a closed tab: the entry keeps the place the reader left.
+    const onPageHide = () => writePlace();
     target.addEventListener('popstate', onPopState as EventListener);
-    return () => target.removeEventListener('popstate', onPopState as EventListener);
-  }, [enabled, openEntry, ownEntry, remember, stepLanded]);
+    target.addEventListener('pagehide', onPageHide);
+    return () => {
+      target.removeEventListener('popstate', onPopState as EventListener);
+      target.removeEventListener('pagehide', onPageHide);
+    };
+  }, [enabled, cancelPlaceWrite, openEntry, ownEntry, remember, restoreEntryPlace, stepLanded, writePlace]);
 
   const go = useCallback((delta: number) => {
     if (!optionsRef.current.enabled || !Number.isInteger(delta) || delta === 0) return;
@@ -422,6 +508,7 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
   }, [go]);
   const replaceNext = useCallback(() => { replaceNextRef.current = true; }, []);
   const restoresPage = useCallback(() => restoresPageRef.current, []);
+  const keepPlace = writePlace;
 
   const live = enabled && entry !== null;
   return {
@@ -434,5 +521,7 @@ export function useDocumentHistory(options: UseDocumentHistoryOptions): Document
     back,
     forward,
     go,
+    placeMoved,
+    keepPlace,
   };
 }

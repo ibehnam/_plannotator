@@ -505,8 +505,8 @@ ${SANDBOX_SHIM_SCRIPT}
   // onPageScrollUp, onPageTap; the Inbox's size icon on a phone). Opt-in:
   // nothing here listens or posts until the host asks with set-page-reports,
   // so a host that never asks gets exactly what it got before.
-  var pageReports = { contentWidth: false, scrollUp: false, tap: false, scale: 1 };
-  var pageReportListeners = { contentWidth: false, motion: false };
+  var pageReports = { contentWidth: false, scrollUp: false, tap: false, place: false, scale: 1 };
+  var pageReportListeners = { contentWidth: false, motion: false, place: false };
 
   // How wide the page lays out against the frame's own width: a host that can
   // show the page at another width (the Inbox on a phone: "Desktop size") reads
@@ -572,6 +572,7 @@ ${SANDBOX_SHIM_SCRIPT}
     pageReports.contentWidth = !!data && data.contentWidth === true;
     pageReports.scrollUp = !!data && data.scrollUp === true;
     pageReports.tap = !!data && data.tap === true;
+    pageReports.place = !!data && data.place === true;
     pageReports.scale = typeof scale === 'number' && isFinite(scale) && scale > 0 ? Math.min(Math.max(scale, 0.05), 20) : 1;
     if (LIVE) return;
     if (pageReports.contentWidth && !pageReportListeners.contentWidth) {
@@ -586,11 +587,90 @@ ${SANDBOX_SHIM_SCRIPT}
       window.addEventListener('pointercancel', function() { tapStart = null; }, { passive: true, capture: true });
       window.addEventListener('pointerup', noteTapEnd, { passive: true, capture: true });
     }
+    if (pageReports.place && !pageReportListeners.place) {
+      pageReportListeners.place = true;
+      // Not captured: the page's own scroll only, never a scroller inside it.
+      window.addEventListener('scroll', notePlaceForHost, { passive: true });
+    }
     if (pageReports.contentWidth) {
       // A fresh ask always hears the current width, even if it has not changed.
       lastContentWidth = '';
       postContentWidth();
     }
+  }
+
+  // Where the reader is in the page: its own scroll, with the page's height
+  // and width then, so a host's history can put them back on this page (a
+  // step back or forward to it). Posted at most every 100 ms while the page
+  // moves, and once more after the last move.
+  var placeTimer = null;
+  function pagePlace() {
+    var root = document.scrollingElement || document.documentElement;
+    return {
+      top: Math.max(0, Math.round(window.scrollY || (root && root.scrollTop) || 0)),
+      height: Math.round((root && root.scrollHeight) || 0),
+      width: Math.round((root && root.clientWidth) || window.innerWidth || 0),
+    };
+  }
+  function notePlaceForHost() {
+    if (LIVE || !pageReports.place || placeTimer !== null) return;
+    placeTimer = setTimeout(function() {
+      placeTimer = null;
+      var place = pagePlace();
+      postToParent({ type: PREFIX + 'page-place', top: place.top, height: place.height, width: place.width });
+    }, 100);
+  }
+
+  // The host's restore-place: the reader back where a place says, in a page
+  // that may still be laying out (images, fonts). Applied at once, at load,
+  // and while the page settles; the reader's own input, or a scroll of the
+  // page's own once the place was reached, ends it. A page drawn at another
+  // width than when the place was taken goes to the same share of its height.
+  var stopPlaceRestore = null;
+  function restorePagePlace(place) {
+    if (stopPlaceRestore) stopPlaceRestore();
+    var number = function(v) { return typeof v === 'number' && isFinite(v) && v >= 0 ? v : null; };
+    var top = number(place && place.top);
+    if (LIVE || top === null) return;
+    var height = number(place.height) || 0;
+    var width = number(place.width) || 0;
+    var root = document.scrollingElement || document.documentElement;
+    var stopped = false;
+    var timers = [];
+    var reached = null;
+    var inputs = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+    function target() {
+      var w = (root && root.clientWidth) || window.innerWidth || 0;
+      var h = (root && root.scrollHeight) || 0;
+      return width > 0 && w > 0 && Math.abs(w - width) > 1 && height > 0 && h > 0 ? top * h / height : top;
+    }
+    function current() { return window.scrollY || (root && root.scrollTop) || 0; }
+    function stop() {
+      if (stopped) return;
+      stopped = true;
+      for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]);
+      window.removeEventListener('load', apply);
+      for (var j = 0; j < inputs.length; j++) window.removeEventListener(inputs[j], stop, true);
+      if (stopPlaceRestore === stop) stopPlaceRestore = null;
+    }
+    function apply() {
+      if (stopped) return;
+      // The place was reached and the page moved since: someone else scrolled it.
+      if (reached !== null && Math.abs(current() - reached) > 2) { stop(); return; }
+      var to = Math.max(0, Math.round(target()));
+      try { window.scrollTo({ top: to, left: window.scrollX || 0, behavior: 'instant' }); }
+      catch (ex) { window.scrollTo(window.scrollX || 0, to); }
+      var now = current();
+      reached = Math.abs(now - to) <= 1 ? now : null;
+    }
+    for (var k = 0; k < inputs.length; k++) window.addEventListener(inputs[k], stop, { capture: true, passive: true });
+    stopPlaceRestore = stop;
+    apply();
+    if (document.readyState !== 'complete') window.addEventListener('load', apply);
+    var delays = [150, 400, 1000, 2000];
+    delays.forEach(function(ms, n) {
+      timers.push(setTimeout(function() { apply(); if (n === delays.length - 1) stop(); }, ms));
+    });
   }
 
   // --- Selection ---
@@ -1073,6 +1153,8 @@ ${SANDBOX_SHIM_SCRIPT}
       // the boundary; absent means smooth, as before.
       // clear: a host panel floats over the frame's right side (HtmlViewer
       // scrollClear); a mark under it goes below it where the page scrolls.
+      // A place still being given back yields to the annotation.
+      if (stopPlaceRestore) stopPlaceRestore();
       scrollToAnnotation(e.data.id, e.data.behavior === 'auto' ? 'auto' : 'smooth', panelClear(e.data.clear));
     }
 
@@ -1080,7 +1162,13 @@ ${SANDBOX_SHIM_SCRIPT}
       // A linked document opened from an in-page link carried a #fragment.
       // The srcdoc document has no URL of its own, so the parent cannot set
       // one: it replays the fragment here once the new document is ready.
+      if (stopPlaceRestore) stopPlaceRestore();
       scrollToLocalFragment(typeof e.data.fragment === 'string' ? e.data.fragment : '');
+    }
+
+    else if (type === PREFIX + 'restore-place') {
+      // A step back or forward to this page: where the reader was on it.
+      restorePagePlace(e.data);
     }
 
     else if (type === PREFIX + 'focus-mark') {

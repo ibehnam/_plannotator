@@ -12,6 +12,10 @@
  *    that is not on screen.
  *  - Another owner's history state taken for ours; a disabled hook touching
  *    the tab's history at all.
+ *  - Back or Forward showing a page somewhere other than where the reader
+ *    left it: an entry that keeps no place, a page shown twice whose entries
+ *    share one, a place written into the entry a step lands on, or the host's
+ *    own restore fighting the entry's.
  */
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import React, { act, useState } from 'react';
@@ -156,13 +160,16 @@ describe.if(hasDom)('useDocumentHistory', () => {
   let fake: FakeHistory;
   // The host's router: opens DOC a beat later, unless it is missing.
   let missing = new Set<string>();
-  const open = mock(async (doc: string) => {
+  const open = mock(async (doc: string, _options?: { restoreScroll: boolean }) => {
     await new Promise((r) => setTimeout(r, 1));
     if (!missing.has(doc)) api!.show(doc);
   });
-  const showRoot = mock(() => { api!.show(null); });
+  const showRoot = mock((_options: { restoreScroll: boolean }) => { api!.show(null); });
+  // The host's measure of where the reader is, and where it puts them back.
+  let placeNow: unknown = null;
+  const restorePlace = mock((_place: unknown) => {});
 
-  const Harness: React.FC<{ enabled?: boolean; ready?: boolean }> = ({ enabled = true, ready = true }) => {
+  const Harness: React.FC<{ enabled?: boolean; ready?: boolean; places?: boolean }> = ({ enabled = true, ready = true, places = false }) => {
     const [activeDoc, setActiveDoc] = useState<string | null>(null);
     const history = useDocumentHistory({
       enabled,
@@ -171,8 +178,10 @@ describe.if(hasDom)('useDocumentHistory', () => {
       base: BASE,
       rootFile: ROOT,
       session: 'session-1',
-      open: (doc) => open(doc),
-      showRoot: () => showRoot(),
+      open: (doc, options) => open(doc, options),
+      showRoot: (options) => showRoot(options),
+      capturePlace: places ? () => placeNow : undefined,
+      restorePlace: places ? (place) => restorePlace(place) : undefined,
       opensFromAddress: (doc) => /\.(md|html?)$/.test(doc),
       history: fake as unknown as History,
       location: fake.location(),
@@ -182,7 +191,7 @@ describe.if(hasDom)('useDocumentHistory', () => {
     return null;
   };
 
-  async function mount(props: { enabled?: boolean; ready?: boolean } = {}): Promise<void> {
+  async function mount(props: { enabled?: boolean; ready?: boolean; places?: boolean } = {}): Promise<void> {
     host = document.createElement('div');
     document.body.appendChild(host);
     await act(async () => {
@@ -204,8 +213,10 @@ describe.if(hasDom)('useDocumentHistory', () => {
     host = null;
     api = null;
     missing = new Set();
+    placeNow = null;
     open.mockClear();
     showRoot.mockClear();
+    restorePlace.mockClear();
   });
 
   test('mount tags the entry on screen and pushes nothing', async () => {
@@ -239,10 +250,12 @@ describe.if(hasDom)('useDocumentHistory', () => {
     await act(async () => { api!.back(); });
     await settle();
     expect(open).toHaveBeenCalledTimes(1);
-    expect(open.mock.calls[0]![0]).toBe(`${BASE}/second.html`);
+    // A host that gives no place keeps its own restore.
+    expect(open.mock.calls[0]).toEqual([`${BASE}/second.html`, { restoreScroll: true }]);
     await act(async () => { api!.back(); });
     await settle();
     expect(showRoot).toHaveBeenCalledTimes(1);
+    expect(showRoot.mock.calls[0]).toEqual([{ restoreScroll: true }]);
     expect(fake.calls.slice(before)).toEqual(['go -1', 'go -1']);
     expect(fake.at).toBe(0);
     expect(fake.length).toBe(3);
@@ -404,6 +417,119 @@ describe.if(hasDom)('useDocumentHistory', () => {
   test('not ready: nothing until the root has loaded', async () => {
     fake = new FakeHistory('/');
     await mount({ ready: false });
+    expect(fake.calls).toEqual([]);
+  });
+
+  // Where the reader is, written while they move (the hook throttles) and kept before a page opens.
+  async function moveTo(place: unknown): Promise<void> {
+    placeNow = place;
+    await act(async () => { api!.placeMoved(); });
+    await settle(250);
+  }
+  async function follow(doc: string): Promise<void> {
+    await act(async () => { api!.keepPlace(); });
+    await show(doc);
+  }
+  async function step(delta: 1 | -1): Promise<void> {
+    await act(async () => { if (delta < 0) api!.back(); else api!.forward(); });
+    await settle();
+  }
+  const placesKept = () => fake.entries.map((e) => readHistoryEntry(e.state)?.place);
+
+  test('each entry gives back its own place on Back and Forward, and the open restores nothing itself', async () => {
+    fake = new FakeHistory('/');
+    await mount({ places: true });
+    await moveTo('root@5');
+    await follow(`${BASE}/second.html`);
+    await moveTo('second@9');
+    await follow(`${BASE}/third.html`);
+    await moveTo('third@2');
+    expect(placesKept()).toEqual(['root@5', 'second@9', 'third@2']);
+    await step(-1);
+    expect(open.mock.calls[0]).toEqual([`${BASE}/second.html`, { restoreScroll: false }]);
+    expect(restorePlace.mock.calls.at(-1)).toEqual(['second@9']);
+    await step(-1);
+    expect(showRoot.mock.calls[0]).toEqual([{ restoreScroll: false }]);
+    expect(restorePlace.mock.calls.at(-1)).toEqual(['root@5']);
+    await step(1);
+    expect(restorePlace.mock.calls.at(-1)).toEqual(['second@9']);
+    await step(1);
+    expect(restorePlace.mock.calls.at(-1)).toEqual(['third@2']);
+    expect(restorePlace).toHaveBeenCalledTimes(4);
+  });
+
+  test('the place is kept the moment another page opens, not only after a pause', async () => {
+    fake = new FakeHistory('/');
+    await mount({ places: true });
+    placeNow = 'root@just-scrolled';
+    await act(async () => { api!.placeMoved(); });
+    await follow(`${BASE}/second.html`);
+    expect(placesKept()).toEqual(['root@just-scrolled', undefined]);
+  });
+
+  test('two entries of one page keep a place each', async () => {
+    fake = new FakeHistory('/');
+    await mount({ places: true });
+    await follow(`${BASE}/a.html`);
+    await moveTo('a@first');
+    await follow(`${BASE}/b.html`);
+    await moveTo('b@1');
+    await follow(`${BASE}/a.html`);
+    await moveTo('a@second');
+    await step(-1);
+    expect(restorePlace.mock.calls.at(-1)).toEqual(['b@1']);
+    await step(-1);
+    expect(restorePlace.mock.calls.at(-1)).toEqual(['a@first']);
+  });
+
+  test("a move the reader made just before a step is never written into the entry it lands on", async () => {
+    fake = new FakeHistory('/');
+    await mount({ places: true });
+    await follow(`${BASE}/second.html`);
+    await moveTo('second@9');
+    await follow(`${BASE}/third.html`);
+    placeNow = 'third@still-moving';
+    await act(async () => { api!.placeMoved(); });
+    await step(-1);
+    await settle(250);
+    expect(placesKept()).toEqual([null, 'second@9', undefined]);
+  });
+
+  test('a step to a page that no longer opens leaves no place of it on the entry, and restores nothing', async () => {
+    fake = new FakeHistory('/');
+    await mount({ places: true });
+    await follow(`${BASE}/gone.html`);
+    await moveTo('gone@5');
+    await follow(`${BASE}/third.html`);
+    missing.add(`${BASE}/gone.html`);
+    await step(-1);
+    expect(readHistoryEntry(fake.state)).toMatchObject({ doc: `${BASE}/third.html`, index: 1 });
+    expect(readHistoryEntry(fake.state)!.place).toBeUndefined();
+    expect(restorePlace).not.toHaveBeenCalled();
+  });
+
+  test('a reload gives the entry its place back once its page reopens', async () => {
+    fake = new FakeHistory('/second.html', { plannotatorDoc: `${BASE}/second.html`, plannotatorIndex: 1, plannotatorPrev: null, plannotatorSession: 'session-1', plannotatorPlace: 'second@7' });
+    await mount({ places: true });
+    await settle();
+    expect(open.mock.calls).toEqual([[`${BASE}/second.html`, { restoreScroll: false }]]);
+    expect(restorePlace.mock.calls).toEqual([['second@7']]);
+  });
+
+  test('a reload on the root gives its place back at once, and the tab leaving writes the place', async () => {
+    fake = new FakeHistory('/', { plannotatorDoc: null, plannotatorIndex: 0, plannotatorSession: 'session-1', plannotatorPlace: 'root@3' });
+    await mount({ places: true });
+    expect(restorePlace.mock.calls).toEqual([['root@3']]);
+    placeNow = 'root@8';
+    await act(async () => { fake.target.dispatchEvent(new Event('pagehide')); });
+    expect(placesKept()).toEqual(['root@8']);
+  });
+
+  test('disabled: no place is written', async () => {
+    fake = new FakeHistory('/');
+    await mount({ enabled: false, places: true });
+    await moveTo('root@5');
+    await act(async () => { api!.keepPlace(); });
     expect(fake.calls).toEqual([]);
   });
 });

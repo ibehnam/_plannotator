@@ -58,6 +58,7 @@ import {
   useHtmlAnnotation,
   type HtmlContentWidth,
   type HtmlLiveSession,
+  type HtmlPagePlace,
   type HtmlScrollClear,
   type PageKey,
 } from "./useHtmlAnnotation";
@@ -317,6 +318,10 @@ export interface HtmlViewerProps {
   /** Fragment to scroll to once this document's bridge is ready, for a
    *  linked document opened from a `#`-carrying link. Bare id, no `#`. */
   initialFragment?: string;
+  /** Where to put the reader once this document's bridge is ready, as
+   *  `onPagePlace` reported it (a step back or forward to this page); it wins
+   *  over `initialFragment`. A new value is given to the page on screen. */
+  initialPlace?: HtmlPagePlace;
   annotations: Annotation[];
   onAddAnnotation: (ann: Annotation) => void;
   onSelectAnnotation: (id: string | null) => void;
@@ -517,6 +522,12 @@ export interface HtmlViewerProps {
    */
   onPageScrollUp?: () => void;
   /**
+   * Opt-in: where the reader is in the page (its own scroll, with the page's
+   * height and width then), each time it settles after a move, reported by
+   * the bridge. A host's history keeps it for this page. Absent → ignored.
+   */
+  onPagePlace?: (place: HtmlPagePlace) => void;
+  /**
    * Opt-in: a tap on the page (a press and a lift close together), with where
    * it landed as a `clientY` in this window (through `frameScale`). For a host
    * control that comes back on a tap near it. The tap still reaches the page.
@@ -701,6 +712,7 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       onPageChange,
       onOpenLink,
       initialFragment,
+      initialPlace,
       annotations,
       onAddAnnotation,
       onSelectAnnotation,
@@ -749,6 +761,7 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       frameScale,
       onContentWidth,
       onPageScrollUp,
+      onPagePlace,
       onPageTap,
       touchSelection = false,
       hostNavigates = false,
@@ -1160,6 +1173,7 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
       frameScale,
       onContentWidth,
       onPageScrollUp,
+      onPagePlace,
       onPageTap,
     });
     createdIdsRef.current = hook.createdAnnotationIds;
@@ -1504,11 +1518,21 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     }, [iframeReadyVersion, postToBridge]);
 
     // A linked document opened from a `#`-carrying link: the srcdoc document
-    // has no URL, so the fragment is replayed once its bridge is ready.
+    // has no URL, so the fragment is replayed once its bridge is ready. A
+    // place to give back wins: the reader left this page somewhere else.
+    const initialPlaceRef = useRef(initialPlace);
+    initialPlaceRef.current = initialPlace;
     useEffect(() => {
-      if (iframeReadyVersion === 0 || !initialFragment) return;
+      if (iframeReadyVersion === 0 || !initialFragment || initialPlaceRef.current) return;
       postToBridge({ type: `${PREFIX}scroll-to-fragment`, fragment: initialFragment });
     }, [iframeReadyVersion, initialFragment, postToBridge]);
+
+    // A step back or forward to this page: the reader's place on it, once its
+    // bridge is ready, or at once for the page already on screen.
+    useEffect(() => {
+      if (iframeReadyVersion === 0 || !initialPlace) return;
+      postToBridge({ type: `${PREFIX}restore-place`, top: initialPlace.top, height: initialPlace.height, width: initialPlace.width });
+    }, [iframeReadyVersion, initialPlace, postToBridge]);
 
     // Live page navigation with a ready iframe: explicitly clear the previous
     // page's marks, then re-apply the filtered set. Relying on dead anchors to
@@ -1598,16 +1622,17 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
     }, [iframeReadyVersion, hostNavigates]);
 
     // The page reports a host's own controls read (`onContentWidth`,
-    // `onPageScrollUp`, `onPageTap`), and the scale the bridge needs to measure
+    // `onPageScrollUp`, `onPagePlace`, `onPageTap`), and the scale the bridge needs to measure
     // a tap or a scroll in screen pixels. A viewer that never asked posts
     // nothing, and the bridge then neither listens nor reports.
     const wantsContentWidth = !!onContentWidth;
     const wantsScrollUp = !!onPageScrollUp;
+    const wantsPlace = !!onPagePlace;
     const wantsTap = !!onPageTap;
     const reportScale = resolveFrameScale(frameScale);
     const pageReportsAskedRef = useRef(false);
     useEffect(() => {
-      const wants = wantsContentWidth || wantsScrollUp || wantsTap;
+      const wants = wantsContentWidth || wantsScrollUp || wantsPlace || wantsTap;
       if (iframeReadyVersion === 0 || (!wants && !pageReportsAskedRef.current)) return;
       pageReportsAskedRef.current = wants;
       postToBridge({
@@ -1615,9 +1640,10 @@ export const HtmlViewer = forwardRef<ViewerHandle, HtmlViewerProps>(
         contentWidth: wantsContentWidth,
         scrollUp: wantsScrollUp,
         tap: wantsTap,
+        place: wantsPlace,
         scale: reportScale,
       });
-    }, [iframeReadyVersion, wantsContentWidth, wantsScrollUp, wantsTap, reportScale]);
+    }, [iframeReadyVersion, wantsContentWidth, wantsScrollUp, wantsPlace, wantsTap, reportScale]);
 
     // Selections made with a finger (`touchSelection`). A viewer that never
     // asked posts nothing.

@@ -204,6 +204,10 @@ export interface UseLinkedDocReturn {
    *  that scrolls programmatically (a jump to a comment or a section) calls it
    *  first, so the restore cannot cancel or undo that scroll. */
   cancelScrollRestore: () => void;
+  /** Put the reader at ANCHOR in the document on screen (null: its top),
+   *  settling as back()'s restore does: a host's history gives each page's
+   *  place back with it, after an open told not to restore. */
+  restoreScrollAnchor: (anchor: ScrollAnchor | null) => void;
   /** Dismiss the current error */
   dismissError: () => void;
   /** All linked doc annotations including the active doc's live state (keyed by filepath).
@@ -413,6 +417,10 @@ export function useLinkedDoc(options: UseLinkedDocOptions): UseLinkedDocReturn {
     // Two frames: the swap commits, then layout settles.
     frame(() => frame(firstApply));
   }, [cancelScrollRestore]);
+
+  const restoreScrollAnchorOrTop = useCallback((anchor: ScrollAnchor | null) => {
+    restoreScrollAnchorSettled(anchor ?? { blockId: null, offset: 0, scrollTop: 0 });
+  }, [restoreScrollAnchorSettled]);
 
   const back = useCallback((backOptions?: { restoreScroll?: boolean }) => {
     cancelPendingNavigation();
@@ -947,6 +955,7 @@ export function useLinkedDoc(options: UseLinkedDocOptions): UseLinkedDocReturn {
     openLoaded,
     back,
     cancelScrollRestore,
+    restoreScrollAnchor: restoreScrollAnchorOrTop,
     dismissError,
     getDocAnnotations,
     getFeedbackDocuments,

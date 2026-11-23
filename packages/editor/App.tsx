@@ -45,7 +45,8 @@ import { parseMarkdownToBlocks, exportAnnotations, exportLinkedDocAnnotations, e
 import { primeSkillCatalog, primeSkillContentsForExport } from '@plannotator/ui/utils/skillCatalog';
 import { Viewer, ViewerHandle } from '@plannotator/ui/components/Viewer';
 import type { AnnotationRestoreReport } from '@plannotator/ui/hooks/useAnnotationHighlighter';
-import { HtmlViewer, pageKeyClaims } from '@plannotator/ui/components/html-viewer';
+import { HtmlViewer, pageKeyClaims, type HtmlPagePlace } from '@plannotator/ui/components/html-viewer';
+import { captureScrollAnchor, type ScrollAnchor } from '@plannotator/ui/utils/scrollAnchor';
 import { annotateSettingsShortcutRegistry, goalSetupSettingsShortcutRegistry, planReviewSettingsShortcutRegistry } from './shortcuts';
 import { MarkdownEditor, type MarkdownEditorHandle } from '@plannotator/ui/components/MarkdownEditor';
 import { AnnotationPanel } from '@plannotator/ui/components/AnnotationPanel';
@@ -159,6 +160,7 @@ import { useResizablePanel } from '@plannotator/ui/hooks/useResizablePanel';
 import { ResizeHandle } from '@plannotator/ui/components/ResizeHandle';
 import { OverlayScrollArea } from '@plannotator/ui/components/OverlayScrollArea';
 import {
+  addScrollViewportListener,
   getDocumentScrollViewport,
   ScrollViewportProvider,
 } from '@plannotator/ui/hooks/useScrollViewport';
@@ -526,6 +528,9 @@ const itemId = (item: { id: string }): string => item.id;
 
 /** Hint shown following the cursor while hovering a sidebar/panel resize handle. */
 const RESIZE_HANDLE_TOOLTIP = 'Click to close · Drag to resize';
+
+/** Where the reader was on a page, kept by its history entry (useDocumentHistory). */
+type PagePlace = { frame: HtmlPagePlace } | { blocks: ScrollAnchor };
 
 const App: React.FC = () => {
   useViewportEnvironment();
@@ -1523,7 +1528,17 @@ const App: React.FC = () => {
     );
   }, []);
 
+  // Where the reader is on an HTML page, as its bridge last reported it (the
+  // page scrolls inside its frame), and the place to give a page back once its
+  // bridge is ready; each keyed by the page's path.
+  const htmlPageReportRef = useRef<{ path: string | null; place: HtmlPagePlace } | null>(null);
+  const [htmlPlace, setHtmlPlace] = useState<{ path: string | null; place: HtmlPagePlace } | null>(null);
+
   const handleBeforeDocumentNavigation = useCallback(() => {
+    // The page being left keeps the reader's place in its history entry; a
+    // place still to be given back was the page being left's.
+    documentHistoryRef.current?.keepPlace();
+    setHtmlPlace(null);
     annotationHistory.clear();
     snapshotActiveEditableDocument();
   }, [annotationHistory, snapshotActiveEditableDocument]);
@@ -5515,10 +5530,34 @@ const App: React.FC = () => {
     rootFile: localSourceFile,
     session: currentServerSession(),
     open: (path, historyOptions) => navigateToDocument(path, historyOptions),
-    showRoot: () => handleLinkedDocBack(),
+    showRoot: (historyOptions) => handleLinkedDocBack(historyOptions),
+    // Each entry keeps the reader's place on its page: an HTML page's own
+    // scroll inside its frame, as its bridge reports it; any other page's
+    // first block in view, as the root's Back measures it.
+    capturePlace: (): PagePlace | null | undefined => {
+      if (renderAs === 'html') {
+        const report = htmlPageReportRef.current;
+        return report && report.path === activeHtmlPath ? { frame: report.place } : null;
+      }
+      return scrollViewport ? { blocks: captureScrollAnchor(scrollViewport) } : undefined;
+    },
+    restorePlace: (place) => {
+      const kept = place as PagePlace | null;
+      if (renderAs === 'html') {
+        setHtmlPlace(kept && 'frame' in kept ? { path: activeHtmlPath, place: kept.frame } : null);
+        return;
+      }
+      linkedDocHook.restoreScrollAnchor(kept && 'blocks' in kept ? kept.blocks : null);
+    },
     opensFromAddress: (path) => isAnnotatableDocPath(path, getExtraMarkdownExtensions()),
   });
   documentHistoryRef.current = documentHistory;
+  // The reader moving on a page drawn in the app (Markdown and the like); an
+  // HTML page's moves come from its bridge (onPagePlace).
+  useEffect(() => {
+    if (!scrollViewport || !documentHistoryEnabled) return;
+    return addScrollViewportListener(scrollViewport, () => documentHistoryRef.current?.placeMoved());
+  }, [scrollViewport, documentHistoryEnabled]);
   // Back and Forward beside each jump to the root, named after their pages
   // (the root by its own name). Absent where the history is off.
   const historyStepName = (doc: string | null) => (doc === null ? backLabel : basenameFromPath(doc));
@@ -8183,6 +8222,11 @@ const App: React.FC = () => {
                     readOnly={documentReadOnly}
                     frameStorage={liveApp ? undefined : frameStorage}
                     onPageHistory={liveApp ? undefined : documentHistory.go}
+                    onPagePlace={documentHistoryEnabled ? (place) => {
+                      htmlPageReportRef.current = { path: activeHtmlPath, place };
+                      documentHistory.placeMoved();
+                    } : undefined}
+                    initialPlace={htmlPlace && htmlPlace.path === activeHtmlPath ? htmlPlace.place : undefined}
                   />
                 ) : isEditingMarkdown ? (
                   <MarkdownEditor
