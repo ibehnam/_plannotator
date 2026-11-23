@@ -73,6 +73,12 @@
 32. **A Place of Mind, a theme** (`themes/a-place-of-mind.css`, the registry, `syntaxTheme`): aplaceofmind.com's
     Blueberry Mango (dark) and its warm light scheme, JuliaMono for code, One Dark Pro and One Light for its code
     colours.
+33. **Back and Forward give each page its place** (`useDocumentHistory`'s `plannotatorPlace`, the bridge's
+    `page-place` and `restore-place`, HtmlViewer's `onPagePlace` and `initialPlace`, `useLinkedDoc.restoreScrollAnchor`):
+    each history entry keeps where the reader was on its page (an HTML page's own scroll in its frame, a drawn page's
+    first block in view), written as the reader moves and before another page opens, and given back on Back, Forward
+    and a reload; two entries of one page keep a place each.
+34. That, described in the agent guides (its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
@@ -90,7 +96,7 @@
   releases came after it.
 - `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
   the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' twenty-eight suites in upstream's test sandbox (`--full`: every unit
+  `bun run typecheck` and the patches' thirty-one suites in upstream's test sandbox (`--full`: every unit
   suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
   on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
   a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.
