@@ -53,6 +53,9 @@ suites=(
   packages/ui/shortcuts.test.ts
   apps/hook/server/annotate-command.test.ts
   packages/ui/utils/themeContrast.test.ts
+  packages/ui/components/html-viewer/bridgePagePlace.test.ts
+  packages/ui/components/html-viewer/HtmlViewer.pagePlace.test.tsx
+  packages/ui/components/html-viewer/HtmlViewer.frameScale.test.tsx
 )
 # Files upstream's sandbox refuses to run (scripts/test-sandbox.ts REFUSED).
 refused=(apps/pi-extension/inbox.test.ts tests/never-touch-the-real-inbox.test.ts)
