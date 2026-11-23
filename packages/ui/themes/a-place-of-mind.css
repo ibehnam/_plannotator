@@ -1,0 +1,64 @@
+/* A Place of Mind — aplaceofmind.com's palettes: Blueberry Mango (dark) and its warm light scheme.
+ * The site's own tokens where it has them (background, surface, text, line, accent, accent-soft, syntax);
+ * muted text is its text at 70% over the background, as the site derives its panes from its text. */
+.theme-a-place-of-mind {
+  --background: #181321;
+  --foreground: #feffe0;
+  --card: #221a30;
+  --card-foreground: #feffe0;
+  --popover: #221a30;
+  --popover-foreground: #feffe0;
+  --primary: #ea9649;
+  --primary-foreground: #181321;
+  --secondary: #332b45;
+  --secondary-foreground: #feffe0;
+  --muted: #2a223a;
+  --muted-foreground: #b9b8a7;
+  --accent: #6ee4de;
+  --accent-foreground: #181321;
+  --destructive: #f07c82;
+  --destructive-foreground: #181321;
+  --border: #332b45;
+  --input: #332b45;
+  --ring: #ea9649;
+  --success: #a0c180;
+  --success-foreground: #181321;
+  --warning: #e5c07b;
+  --warning-foreground: #181321;
+
+  --font-sans: system-ui, sans-serif;
+  --font-mono: 'JuliaMono', ui-monospace, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #221a30;
+  --focus-highlight: #6ee4de;
+}
+
+.theme-a-place-of-mind.light {
+  --background: #faf9f6;
+  --foreground: #25241f;
+  --card: #ffffff;
+  --card-foreground: #25241f;
+  --popover: #ffffff;
+  --popover-foreground: #25241f;
+  --primary: #9b3d20;
+  --primary-foreground: #faf9f6;
+  --secondary: #edeae2;
+  --secondary-foreground: #25241f;
+  --muted: #f2f0ea;
+  --muted-foreground: #656460;
+  --accent: #075f87;
+  --accent-foreground: #faf9f6;
+  --destructive: #b42318;
+  --destructive-foreground: #faf9f6;
+  --border: #dedbd1;
+  --input: #dedbd1;
+  --ring: #9b3d20;
+  --success: #3f7d20;
+  --success-foreground: #faf9f6;
+  --warning: #8a5a00;
+  --warning-foreground: #faf9f6;
+
+  --code-bg: #f2efe8;
+  --focus-highlight: #075f87;
+}

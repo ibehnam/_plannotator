@@ -17,6 +17,7 @@
 /** Plannotator theme id -> Shiki theme name, per mode. `null` = this palette
  *  has no counterpart in that mode and falls back to the Pierre default. */
 export const SHIKI_THEME_MAP: Record<string, { dark: string | null; light: string | null }> = {
+  'a-place-of-mind': { dark: 'one-dark-pro', light: 'one-light' },
   'andromeeda': { dark: 'andromeeda', light: null },
   'aurora-x': { dark: 'aurora-x', light: null },
   'ayu-dark': { dark: 'ayu-dark', light: null },

@@ -73,6 +73,17 @@ export const BUILT_IN_THEMES: ThemeInfo[] = [
     },
   },
   {
+    id: 'a-place-of-mind',
+    name: 'A Place of Mind',
+    builtIn: true,
+    modeSupport: 'both',
+    syntaxHighlighting: true,
+    colors: {
+      dark: { primary: '#ea9649', secondary: '#332b45', accent: '#6ee4de', background: '#181321', foreground: '#feffe0' },
+      light: { primary: '#9b3d20', secondary: '#edeae2', accent: '#075f87', background: '#faf9f6', foreground: '#25241f' },
+    },
+  },
+  {
     id: 'adwaita',
     name: 'Adwaita',
     builtIn: true,
