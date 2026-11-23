@@ -219,15 +219,15 @@ describe.if(hasDom)('asking the bridge for its page reports', () => {
     const { post, sent, rerender } = await mount({ readOnly: true, onPageTap, onContentWidth });
     expect(asks(sent)).toEqual([]);
     await post(ready);
-    expect(asks(sent)).toEqual([{ type: 'plannotator-bridge-set-page-reports', contentWidth: true, scrollUp: false, tap: true, scale: 1 }]);
+    expect(asks(sent)).toEqual([{ type: 'plannotator-bridge-set-page-reports', contentWidth: true, scrollUp: false, tap: true, place: false, scale: 1 }]);
     await rerender({ readOnly: true, onPageTap, onContentWidth, frameScale: 0.3 });
-    expect(asks(sent).at(-1)).toEqual({ type: 'plannotator-bridge-set-page-reports', contentWidth: true, scrollUp: false, tap: true, scale: 0.3 });
+    expect(asks(sent).at(-1)).toEqual({ type: 'plannotator-bridge-set-page-reports', contentWidth: true, scrollUp: false, tap: true, place: false, scale: 0.3 });
     // A new callback of the same kind is not a new ask.
     const before = asks(sent).length;
     await rerender({ readOnly: true, onPageTap: () => {}, onContentWidth, frameScale: 0.3 });
     expect(asks(sent).length).toBe(before);
     // Dropping them all tells the bridge to stop.
     await rerender({ readOnly: true });
-    expect(asks(sent).at(-1)).toEqual({ type: 'plannotator-bridge-set-page-reports', contentWidth: false, scrollUp: false, tap: false, scale: 1 });
+    expect(asks(sent).at(-1)).toEqual({ type: 'plannotator-bridge-set-page-reports', contentWidth: false, scrollUp: false, tap: false, place: false, scale: 1 });
   });
 });

@@ -174,6 +174,7 @@ type BridgeMessage =
   | { type: `${typeof PREFIX}resize`; height: number }
   | { type: `${typeof PREFIX}content-width`; width: number; viewport: number }
   | { type: `${typeof PREFIX}page-scroll-up` }
+  | ({ type: `${typeof PREFIX}page-place` } & HtmlPagePlace)
   | { type: `${typeof PREFIX}page-tap`; y: number }
   | { type: `${typeof PREFIX}page-change`; pageUrl: string }
   | { type: `${typeof PREFIX}link-click`; href: string }
@@ -316,10 +317,25 @@ export interface UseHtmlAnnotationOptions {
   /** The person scrolled the page (or a scroller in it) back up. Delivered in
    *  readOnly mode too. Absent: ignored. */
   onPageScrollUp?: () => void;
+  /** Where the reader is in the page, each time it settles after a move
+   *  (`HtmlPagePlace`). Delivered in readOnly mode too. Absent: ignored. */
+  onPagePlace?: (place: HtmlPagePlace) => void;
   /** A tap on the page, with where it landed as a `clientY` in the parent
    *  (converted through `frameScale`). Delivered in readOnly mode too.
    *  Absent: ignored. */
   onPageTap?: (clientY: number) => void;
+}
+
+/**
+ * Where the reader is in a page: its own scroll from the top, and the page's
+ * height and width then, in the page's pixels. A host gives it back with
+ * HtmlViewer's `initialPlace`; a page laid out at another width goes to the
+ * same share of its height.
+ */
+export interface HtmlPagePlace {
+  top: number;
+  height: number;
+  width: number;
 }
 
 /** The page's laid-out width and the frame's own width, in the page's pixels. */
@@ -598,6 +614,11 @@ export function parseBridgeMessage(value: unknown): BridgeMessage | null {
     }
     case `${PREFIX}page-scroll-up`:
       return { type: value.type };
+    case `${PREFIX}page-place`: {
+      const { top, height, width } = value;
+      const fits = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100_000_000;
+      return fits(top) && fits(height) && fits(width) ? { type: value.type, top, height, width } : null;
+    }
     case `${PREFIX}page-tap`:
       return typeof value.y === "number" && Number.isFinite(value.y) && Math.abs(value.y) <= 1_000_000
         ? { type: value.type, y: value.y }
@@ -672,6 +693,7 @@ export function useHtmlAnnotation({
   frameScale,
   onContentWidth,
   onPageScrollUp,
+  onPagePlace,
   onPageTap,
 }: UseHtmlAnnotationOptions): Omit<
   UseAnnotationHighlighterReturn,
@@ -821,6 +843,8 @@ export function useHtmlAnnotation({
   onContentWidthRef.current = onContentWidth;
   const onPageScrollUpRef = useRef(onPageScrollUp);
   onPageScrollUpRef.current = onPageScrollUp;
+  const onPagePlaceRef = useRef(onPagePlace);
+  onPagePlaceRef.current = onPagePlace;
   const onPageTapRef = useRef(onPageTap);
   onPageTapRef.current = onPageTap;
   onHostDraftRef.current = onHostDraft;
@@ -988,6 +1012,7 @@ export function useHtmlAnnotation({
         && type !== `${PREFIX}content-width`
         // Scrolling and tapping are reading, reported for a host's own controls.
         && type !== `${PREFIX}page-scroll-up`
+        && type !== `${PREFIX}page-place`
         && type !== `${PREFIX}page-tap`
         // Page identity is navigation state, not an annotation mutation.
         && type !== `${PREFIX}page-change`
@@ -1251,6 +1276,10 @@ export function useHtmlAnnotation({
 
       if (type === `${PREFIX}page-scroll-up`) {
         onPageScrollUpRef.current?.();
+      }
+
+      if (type === `${PREFIX}page-place`) {
+        onPagePlaceRef.current?.({ top: message.top, height: message.height, width: message.width });
       }
 
       if (type === `${PREFIX}page-tap`) {
