@@ -132,4 +132,23 @@ describe('built-in theme text contrast', () => {
       expect(ratio!, `${key(a)} moved: update its pin`).toBeCloseTo(a.ratio, 2);
     }
   });
+
+  test("A Place of Mind draws every toolstrip hover in a hue that reads on its page", () => {
+    // The toolstrip draws a hovered mode's icon and label in that mode's hue: Select and Pinpoint in --primary,
+    // Markup in --secondary, Comment in --accent-text (the accent here), Redline in --destructive. Plannotator's
+    // own theme makes --secondary a second accent; most others make it a surface, where Markup's hover all but
+    // vanishes (upstream's, left as it is). The fork's theme did too, and its Markup hover was near-invisible.
+    const css = readFileSync(join(UI, 'themes', 'a-place-of-mind.css'), 'utf8');
+    const dark = rule(css, '.theme-a-place-of-mind');
+    const modes = { dark, light: { ...dark, ...rule(css, '.theme-a-place-of-mind.light') } };
+    const faint: string[] = [];
+    for (const [mode, tokens] of Object.entries(modes)) {
+      const page = parseCssColor(tokens['--background'])!;
+      for (const hue of ['--primary', '--secondary', '--accent', '--destructive']) {
+        const ratio = contrastRatio(compositeOver(parseCssColor(tokens[hue])!, page), page);
+        if (ratio < 3) faint.push(`${mode} ${hue} ${ratio.toFixed(2)}`);
+      }
+    }
+    expect(faint).toEqual([]);
+  });
 });

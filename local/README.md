@@ -72,7 +72,8 @@
 31. Those, described in the agent guides (its own commit, as 5).
 32. **A Place of Mind, a theme** (`themes/a-place-of-mind.css`, the registry, `syntaxTheme`): aplaceofmind.com's
     Blueberry Mango (dark) and its warm light scheme, JuliaMono for code, One Dark Pro and One Light for its code
-    colours.
+    colours. Its secondary is a second accent, the site's keyword orchid, as in Plannotator's own theme: the toolstrip
+    draws Markup's hover in it, which a surface secondary made near-invisible (`themeContrast.test.ts` guards it).
 33. **Back and Forward give each page its place** (`useDocumentHistory`'s `plannotatorPlace`, the bridge's
     `page-place` and `restore-place`, HtmlViewer's `onPagePlace` and `initialPlace`, `useLinkedDoc.restoreScrollAnchor`):
     each history entry keeps where the reader was on its page (an HTML page's own scroll in its frame, a drawn page's

@@ -1,6 +1,8 @@
 /* A Place of Mind — aplaceofmind.com's palettes: Blueberry Mango (dark) and its warm light scheme.
  * The site's own tokens where it has them (background, surface, text, line, accent, accent-soft, syntax);
- * muted text is its text at 70% over the background, as the site derives its panes from its text. */
+ * muted text is its text at 70% over the background, as the site derives its panes from its text.
+ * Secondary is a second accent, as in Plannotator's own theme (the toolstrip draws Markup's hover in it):
+ * the site's keyword orchid. */
 .theme-a-place-of-mind {
   --background: #181321;
   --foreground: #feffe0;
@@ -10,8 +12,8 @@
   --popover-foreground: #feffe0;
   --primary: #ea9649;
   --primary-foreground: #181321;
-  --secondary: #332b45;
-  --secondary-foreground: #feffe0;
+  --secondary: #cc75d0;
+  --secondary-foreground: #181321;
   --muted: #2a223a;
   --muted-foreground: #b9b8a7;
   --accent: #6ee4de;
@@ -43,8 +45,8 @@
   --popover-foreground: #25241f;
   --primary: #9b3d20;
   --primary-foreground: #faf9f6;
-  --secondary: #edeae2;
-  --secondary-foreground: #25241f;
+  --secondary: #74378a;
+  --secondary-foreground: #faf9f6;
   --muted: #f2f0ea;
   --muted-foreground: #656460;
   --accent: #075f87;
