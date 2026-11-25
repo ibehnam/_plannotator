@@ -144,6 +144,7 @@ import { CF_ACCESS_SESSION_LINE, openSessionDoor } from "@plannotator/server/ses
 import { resolveCfAccess } from "@plannotator/shared/inbox/cf-access";
 import { allowIgnoredLine } from "@plannotator/shared/inbox/tailnet-refusal";
 import { planReviewEnvFor, scrubModSessionEnv } from "./mod-session-env";
+import { planReviewGateOpens } from "./plan-review-gate";
 import { resolveAnnotateTarget } from "./annotate-resolution";
 import { annotateDecisionTarget, reviewDecisionTarget, takeHostReviewId, targetText } from "./decision-target";
 import { formatSessionsJson, formatSessionsTable } from "./sessions-output";
@@ -3578,10 +3579,15 @@ if (args[0] === "sessions") {
   // Plan review turned off for Claude Code: no decision, so Claude Code shows
   // its own dialog (or, where the host draws its own plan card, the mod's
   // marked `0` for this session: the host's card decides).
+  const planReviewEnv = planReviewEnvFor(modPlanReviewSwitch, event.session_id);
   if (
     event.hook_event_name === "PermissionRequest" &&
     event.tool_name === "ExitPlanMode" &&
-    !resolvePlanReview(loadConfig(), planReviewEnvFor(modPlanReviewSwitch, event.session_id))
+    !resolvePlanReview(loadConfig(), planReviewEnv) &&
+    // This fork: where the value is the person's own, their gate may ask for
+    // this plan's review (plan-review-gate.ts). A host's card stays the host's.
+    !(planReviewEnv.PLANNOTATOR_PLAN_REVIEW === process.env.PLANNOTATOR_PLAN_REVIEW &&
+      (await planReviewGateOpens(eventJson)))
   ) {
     process.exit(0);
   }
