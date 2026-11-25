@@ -90,6 +90,48 @@
 
 `main` mirrors `upstream/main` and is never committed to.
 
+## The patch guard
+
+Each code patch has a suite that fails without it (audit of 2026-11-24, `mine` at `b0457d956`, on the
+build host, no binary build; `mine` itself: 398 and 493 pass, 0 fail). "Without": the patch's non-test
+changes reverse-applied on `mine`, the test files and `tests/dom-test-list.txt` kept, every listed suite
+run. "Before": where a later patch changed the same lines, `mine` at the patch's parent with the test
+files and the DOM list as the patch left them, its own suites run. Every suite below is in `suites`.
+
+| Patch | Commit | Check | Suites that fail |
+|---|---|---|---|
+| 2 | `32acfe96b` | without | `srcdoc` |
+| 3 | `ebdf797d6` | before | `html-anchor`, `HtmlViewer.reopenComment`, `htmlPinpointProtocol`, `srcdoc` |
+| 4 | `4fed86158` | without | `parser` |
+| 6 | `0a6fdc22d` | before | `useDocumentHistory` |
+| 7 | `cf3dea5d2` | before | `frameStorage`, `HtmlViewer.frameHost`, `sandboxShim` |
+| 8 | `ab17966f8` | before | `HtmlViewer.frameHost`, `linkGuard`, `sandboxShim` |
+| 9 | `88880f01a` | without | `reference-handlers` |
+| 10 | `9c676fb00` | before | `App.bundleBackScroll`, `DocBadges` (then the run hung, 900 s) |
+| 11 | `e06db1b92` | without | `App.annotateView` |
+| 12 | `45d064aad` | without | `App.annotateView` |
+| 13 | `cbf9b3942` | without | `Viewer.vimMode.integration`, `srcdoc`, `useVimSelection` |
+| 15 | `a79f4c898` | before | `App.htmlChrome` (superseded by 23, whose suites guard it now) |
+| 17 | `248f56145` | before | `htmlPinpointProtocol`, `srcdoc` |
+| 18 | `0b2fe5abb` | before | `close-tab`, `useAutoClose` |
+| 19 | `077d2f42e` | before | `App.htmlChrome`, `htmlPinpointProtocol`, `srcdoc`, `annotationModes` |
+| 21 | `91a8bfda9` | before | `htmlPinpointProtocol` |
+| 22 | `d7eed5144` | without | `App.decisionControl` |
+| 23 | `6f65860b9` | before | `App.htmlChrome`, `inputMethod` |
+| 24 | `03559c468` | without | `srcdoc` |
+| 25 | `c141183c5` | before | `App.htmlChrome`, `htmlPinpointProtocol`, `linkGuard`, `shortcuts` |
+| 26 | `29038a7ed` | without | `srcdoc` |
+| 27 | `5446db3ee` | before | `annotate-command`, `close-tab`, `useAutoClose` |
+| 29 | `192045c2b` | without | `App.htmlChrome`, `useInputMethodSwitch` |
+| 30 | `2fc423eaa` | without | `App.decisionControl`, `useAutoClose` |
+| 32 | `0866429ab` with `2ba5b4036` | without | `themeContrast` |
+| 32 (secondary) | `2ba5b4036` | without | `themeContrast` |
+| 33 | `58015139f` | without | `useDocumentHistory`, `HtmlViewer.frameScale`, `HtmlViewer.pagePlace`, `bridgePagePlace` |
+| 35 | `5d2c81a43` | without | `apps/hook/server/plan-review-gate` |
+
+`apps/hook/hooks/mod/plan-review-gate` passes without 35 by design: it guards upstream's mod, not the patch.
+A replay changes the commit names; check each new code patch the same way before it is listed.
+
 ## Setup, once per machine
 
 - `local/build.env` (git-ignored): `BUILD_HOST=<ssh host>`, a Mac on Apple silicon with Homebrew's
