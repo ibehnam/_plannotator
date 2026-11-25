@@ -112,12 +112,15 @@ case $step in
     mkdir -p "$root/out"
     bun build apps/hook/server/index.ts --compile --no-compile-autoload-bunfig --target=bun-darwin-arm64 \
       --define "__CLI_VERSION__=\"$1\"" --outfile "$root/out/plannotator" ;;
-  test) # stdin: test files, one a line. Typecheck, then those files in upstream's sandbox.
+  test) # stdin: test files, one a line. Typecheck, then those files in upstream's sandbox, after the
+    # Pi extension's generated copies, as upstream's CI makes them. This host scans each new executable
+    # at its first exec, so a test's default 5 s is raised to 30 s (the slowest that passed took 12 s).
     mapfile -t files
     exec </dev/null
     cd "$root/src"
     bun run typecheck
-    bun run test:sandbox "${files[@]}" ;;
+    bash apps/pi-extension/vendor.sh
+    bun run test:sandbox "${files[@]}" -- --timeout=30000 ;;
   *) echo "host.sh: unknown step $step" >&2; exit 2 ;;
 esac
 HOST
@@ -233,10 +236,19 @@ viewer_pin() {
 
 # Builds and tests `mine` (on release $1) on the build host, and stages the binary here.
 build() {
-  local release=$1 version pin
+  local release=$1 version pin try rc
   version="${release#v}+mine.$(g rev-parse --short=7 mine)"
-  gtimeout 300 rsync -a --delete --exclude=.git/ --exclude=node_modules/ --exclude=dist/ \
-    --exclude=/local/build.env "$repo/" "$BUILD_HOST:$root/src/"
+  # With .git: the suites that read Git (`git ls-files`, the release tags) run in a checkout, as on CI.
+  # A `git gc` that Git starts by itself after a command can repack while the copy runs; rsync then
+  # says files vanished (24), and the copy is tried again once Git is done.
+  for try in 1 2 3; do
+    rc=0
+    gtimeout 900 rsync -a --delete --exclude=node_modules/ --exclude=dist/ \
+      --exclude=/local/build.env "$repo/" "$BUILD_HOST:$root/src/" || rc=$?
+    [[ $rc == 24 && $try != 3 ]] || break
+    sleep 10
+  done
+  ((rc == 0)) || die "the copy to $BUILD_HOST failed (rsync $rc)"
   pin=$(viewer_pin "$release")
   on_host 2400 build "$version" "$pin" </dev/null
   if ((full)); then

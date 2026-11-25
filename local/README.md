@@ -148,10 +148,11 @@ suite is now in `suites` too, so each build runs it, and the commits from patch 
 - `plannotator-rebuild --check`: the installed build, the release `mine` is on, and how many
   releases came after it.
 - `plannotator-rebuild --replay` (or `--to TAG`): replays `mine` onto the newest release, syncs the
-  tree to the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe,
-  runs `bun run typecheck` and thirty-four suites in upstream's test sandbox (`--full`:
-  every unit suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the
-  browser check on it. It pushes nothing and installs nothing. With `--newer-than REV` and no
+  tree with its Git data to the build host's `~/.cache/plannotator-build/src`, builds it with
+  upstream's CI recipe, runs `bun run typecheck`, the Pi extension's vendor step and thirty-four
+  suites in upstream's test sandbox (`--full`: every unit suite), each test allowed 30 s, since the
+  build host scans each new executable at its first exec. It stages the binary at
+  `~/.cache/plannotator-build/plannotator`, and runs the browser check on it. It pushes nothing and installs nothing. With `--newer-than REV` and no
   `--to`, it stops first (exit 5) unless a release is newer than REV's.
 - `plannotator-rebuild --push`: tags `mine` `mine-<release>.<n>` (a commit that has its tag keeps
   it) and pushes `mine` (`--force-with-lease`) and the tag.
