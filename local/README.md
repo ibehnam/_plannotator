@@ -131,6 +131,9 @@ files and the DOM list as the patch left them, its own suites run. Every suite b
 
 `apps/hook/hooks/mod/plan-review-gate` passes without 35 by design: it guards upstream's mod, not the patch.
 A replay changes the commit names; check each new code patch the same way before it is listed.
+On 2026-11-25 patches 27 and 35 gained `windowsHide: true` on their spawns (`close-tab.ts`,
+`plan-review-gate.ts`), which upstream's `tests/windows-hide-guard.test.ts` asks of every spawn; that
+suite is now in `suites` too, so each build runs it, and the commits from patch 27 on have new names.
 
 ## Setup, once per machine
 
@@ -146,7 +149,7 @@ A replay changes the commit names; check each new code patch the same way before
   releases came after it.
 - `plannotator-rebuild --replay` (or `--to TAG`): replays `mine` onto the newest release, syncs the
   tree to the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe,
-  runs `bun run typecheck` and the patches' thirty-three suites in upstream's test sandbox (`--full`:
+  runs `bun run typecheck` and thirty-four suites in upstream's test sandbox (`--full`:
   every unit suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the
   browser check on it. It pushes nothing and installs nothing. With `--newer-than REV` and no
   `--to`, it stops first (exit 5) unless a release is newer than REV's.

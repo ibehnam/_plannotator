@@ -72,6 +72,7 @@ suites=(
   packages/ui/components/html-viewer/HtmlViewer.frameScale.test.tsx
   apps/hook/server/plan-review-gate.test.ts
   apps/hook/hooks/mod/plan-review-gate.test.ts
+  tests/windows-hide-guard.test.ts
 )
 # Files upstream's sandbox refuses to run (scripts/test-sandbox.ts REFUSED).
 refused=(apps/pi-extension/inbox.test.ts tests/never-touch-the-real-inbox.test.ts)
