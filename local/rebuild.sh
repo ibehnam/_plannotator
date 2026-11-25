@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 # plannotator-rebuild: Plannotator's release with this fork's patches replayed on it, built and
-# tested on the build host, checked in a browser here, and installed over ~/.local/bin/plannotator.
+# tested on the build host, checked in a browser here, pushed, and installed over ~/.local/bin/plannotator.
 #
 #   plannotator-rebuild --check      the installed build, the release `mine` is on, the newest release
-#   plannotator-rebuild [--to TAG]   replay `mine` onto TAG (default: the newest release), build,
-#                                    test, check, then install, tag and push
+#   plannotator-rebuild [--to TAG]   --replay, --push and --install, in that order, in one run
+#   plannotator-rebuild --replay [--to TAG] [--newer-than REV]
+#                                    replay `mine` onto TAG (default: the newest release), build, test,
+#                                    stage the binary and check it; push and install nothing.
+#                                    --newer-than: stop unless a release is newer than REV's
+#   plannotator-rebuild --push       tag `mine` mine-<release>.<n> (once a commit), push it and the tag
+#   plannotator-rebuild --install    install the staged binary; the one it replaces is kept as
+#                                    plannotator-previous
 #   plannotator-rebuild --stage      build and test `mine` as it is and stage the binary; install nothing
 #   plannotator-rebuild --rollback   put the official binary back
 #   --full                           test with upstream's whole unit suite, not only the patches' suites
+#
+# --push and --install accept only a staged binary built from `mine` as it is.
+# Exit status: 0 done; 1 failed; 2 a wrong argument; 3 the patches conflict with the release (mine is
+# unchanged); 4 the browser check failed; 5 no release is newer than REV's; 75 a transient failure (no
+# network, the build host does not answer, or the browser check could not run).
 #
 # local/build.env (git-ignored) sets BUILD_HOST (an ssh host with Bun in ~/.bun/bin) and CHECK (the
 # browser check, run as `uv run --script "$CHECK" check --plannotator BIN`). See local/README.md.
@@ -21,7 +32,10 @@ source "$here/build.env"
 
 bin=$HOME/.local/bin/plannotator
 official=$HOME/.local/bin/plannotator-official
+previous=$HOME/.local/bin/plannotator-previous
 staged=$HOME/.cache/plannotator-build/plannotator
+# Release tags come from the `upstream` remote, or from this address where a clone has none.
+upstream_url=https://github.com/backnotprop/plannotator.git
 config=$HOME/.plannotator/config.json
 root=.cache/plannotator-build   # on the build host, under its home
 suites=(
@@ -109,6 +123,13 @@ HOST
 )
 
 die() { echo "plannotator-rebuild: $*" >&2; exit 1; }
+# Stops with exit status $1 (see the header).
+stop() {
+  local code=$1
+  shift
+  echo "plannotator-rebuild: $*" >&2
+  exit "$code"
+}
 g() { git -C "$repo" "$@"; }
 # A step on the build host, stopped there after $1 seconds, and here 30 seconds later.
 on_host() {
@@ -117,8 +138,12 @@ on_host() {
   gtimeout $((seconds + 30)) ssh "$BUILD_HOST" gtimeout "$seconds" bash "$root/host.sh" "$@"
 }
 releases() { g tag -l 'v*' --sort=v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$'; }
-base_release() { g describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' mine; }
-fetch_releases() { gtimeout 120 git -C "$repo" fetch --quiet --no-tags upstream 'refs/tags/v*:refs/tags/v*'; }
+base_release() { g describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' "${1:-mine}"; }
+fetch_releases() {
+  local from=upstream
+  g remote get-url upstream >/dev/null 2>&1 || from=$upstream_url
+  gtimeout 120 git -C "$repo" fetch --quiet --no-tags "$from" 'refs/tags/v*:refs/tags/v*'
+}
 
 show_status() {
   fetch_releases
@@ -131,11 +156,14 @@ show_status() {
   echo "upstream:  newest release $newest, $behind release(s) after $base"
 }
 
-preflight() {
+preflight_tree() {
   [[ $(g branch --show-current) == mine ]] || die "check out mine first"
   [[ -z $(g status --porcelain) ]] || die "the working tree has changes: commit or stash them"
+}
+
+preflight_host() {
   gtimeout 30 ssh "$BUILD_HOST" "mkdir -p $root && cat > $root/host.sh" <<<"$host_script" ||
-    die "the build host $BUILD_HOST does not answer"
+    stop 75 "the build host $BUILD_HOST does not answer"
   local have floor
   have=$(on_host 60 bun </dev/null) || die "no Bun in ~/.bun/bin on $BUILD_HOST"
   floor=$(sed -nE 's/^export const MIN_BUN_VERSION = "([0-9.]+)";$/\1/p' "$repo/scripts/check-bun-runtime-trust.ts")
@@ -164,7 +192,7 @@ replay() {
   if ! g rebase --onto "$target" "$base" mine; then
     files=$(g diff --name-only --diff-filter=U | tr '\n' ' ')
     g rebase --abort
-    die "the patches conflict with $target in: $files(mine is unchanged; replay by hand: git rebase --onto $target $base mine)"
+    stop 3 "the patches conflict with $target in: $files(mine is unchanged; replay by hand: git rebase --onto $target $base mine)"
   fi
   echo "mine replayed from $base onto $target; compare: git range-diff $base..$old $target..mine"
 }
@@ -221,13 +249,34 @@ build() {
   echo "staged: $staged ($version)"
 }
 
-# Puts binary $1 at $bin by a rename in its directory, so a running session keeps its own file. Its
-# date is kept: the browser check records its verdict by the binary's date and size, which the
-# annotate plugin's doctor compares with the installed one.
+# Puts binary $1 at $2 (default $bin) by a rename in its directory, so a running session keeps its
+# own file. Its date is kept: the browser check records its verdict by the binary's date and size,
+# which the annotate plugin's doctor compares with the installed one.
 install_bin() {
-  local tmp
-  tmp=$(mktemp "$bin.XXXXXX")
-  cp -p "$1" "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$bin"
+  local to=${2:-$bin} tmp
+  tmp=$(mktemp "$to.XXXXXX")
+  cp -p "$1" "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$to"
+}
+
+# The version the staged binary prints when it was built from `mine` as it is now; else stops.
+staged_version() {
+  local want
+  want="plannotator $(base_release | sed 's/^v//')+mine.$(g rev-parse --short=7 mine)"
+  [[ -x $staged && $("$staged" --version 2>/dev/null) == "$want" ]] ||
+    die "the staged binary is not the build of mine as it is ($want): run plannotator-rebuild --replay"
+  echo "$want"
+}
+
+# The browser check on the staged binary: its exit 1 is a failed probe, its 2 a check that could not run.
+check_staged() {
+  local rc=0
+  gtimeout 900 uv run --script "$CHECK" check --plannotator "$staged" || rc=$?
+  case $rc in
+    0) ;;
+    1) stop 4 "the browser check failed on $staged; nothing pushed or installed" ;;
+    2) stop 75 "the browser check could not run; nothing pushed or installed" ;;
+    *) die "the browser check stopped (rc $rc); nothing pushed or installed" ;;
+  esac
 }
 
 # autoUpdate and updateCheck off in Plannotator's config, every other key kept.
@@ -252,28 +301,69 @@ os.replace(tmp, path)
 PY
 }
 
-tag_and_push() {
-  local version=${1#v} n
-  n=$(($(g tag -l "mine-$version.*" | wc -l) + 1))
-  g tag -a "mine-$version.$n" -m "$("$bin" --version), installed $(date -u +%Y-%m-%dT%H:%M:%SZ)" mine
-  gtimeout 120 git -C "$repo" push --force-with-lease origin mine
-  gtimeout 120 git -C "$repo" push origin "refs/tags/mine-$version.$n"
-  echo "installed $("$bin" --version), tagged mine-$version.$n"
+# Replays `mine` onto release $1, then builds, tests, stages and checks it.
+replay_and_stage() {
+  local target=$1
+  replay "$target"
+  preflight_host
+  build "$(base_release)"
+  check_staged
 }
 
-mode=install to='' full=0
+# Tags the staged build's commit mine-<release>.<n>, once: a commit that has its tag keeps it. Then
+# pushes `mine` (with a lease on the fetched origin/mine) and the tag.
+push_mine() {
+  local version tag n
+  version=$(staged_version)
+  version=${version#plannotator }
+  version=${version%%+*}
+  gtimeout 60 git -C "$repo" ls-remote --exit-code origin refs/heads/mine >/dev/null ||
+    stop 75 "origin does not answer; nothing pushed"
+  tag=$(g tag --points-at mine -l "mine-$version.*" --sort=v:refname | tail -n 1)
+  if [[ -z $tag ]]; then
+    n=$(g tag -l "mine-$version.*" | sed -n "s/^mine-$version\.\([0-9][0-9]*\)\$/\1/p" | sort -n | tail -n 1)
+    tag="mine-$version.$((${n:-0} + 1))"
+    g tag -a "$tag" -m "$("$staged" --version), pushed $(date -u +%Y-%m-%dT%H:%M:%SZ)" mine
+  fi
+  gtimeout 120 git -C "$repo" push --force-with-lease origin mine ||
+    die "the push of mine failed: origin's mine moved since the fetch, or the network went"
+  gtimeout 120 git -C "$repo" push origin "refs/tags/$tag" || die "the push of $tag failed"
+  echo "pushed mine and $tag"
+}
+
+# Installs the staged build of `mine`. The binary it replaces is kept as plannotator-previous (an
+# official one also as plannotator-official), unless it is that same build.
+install_staged() {
+  local version
+  version=$(staged_version)
+  keep_official
+  if [[ -x $bin && $("$bin" --version 2>/dev/null) != "$version" ]]; then
+    install_bin "$bin" "$previous"
+    echo "kept $("$previous" --version 2>/dev/null) as $previous"
+  fi
+  updates_off
+  install_bin "$staged"
+  echo "installed $("$bin" --version)"
+}
+
+mode=all to='' newer_than='' full=0
 while (($#)); do
   case $1 in
     --check) mode=check ;;
+    --replay) mode=replay ;;
+    --push) mode=push ;;
+    --install) mode=install ;;
     --stage) mode=stage ;;
     --rollback) mode=rollback ;;
     --to) to=${2:?--to needs a release tag}; shift ;;
+    --newer-than) newer_than=${2:?--newer-than needs a commit}; shift ;;
     --full) full=1 ;;
-    -h | --help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) die "unknown argument: $1 (see --help)" ;;
+    -h | --help) awk 'NR > 1 && !/^#/ {exit} NR > 1 {sub(/^# ?/, ""); print}' "$0"; exit 0 ;;
+    *) stop 2 "unknown argument: $1 (see --help)" ;;
   esac
   shift
 done
+[[ -z $newer_than || ($mode == replay && -z $to) ]] || stop 2 "--newer-than goes with --replay and no --to"
 
 case $mode in
   check) show_status ;;
@@ -281,16 +371,23 @@ case $mode in
     [[ -x $official ]] || die "no official copy at $official"
     install_bin "$official"
     echo "installed $("$bin" --version)" ;;
-  stage | install)
-    preflight
-    fetch_releases
-    keep_official
-    [[ $mode == stage ]] || replay "${to:-$(releases | tail -n 1)}"
-    release=$(base_release)
-    build "$release"
-    [[ $mode == stage ]] && exit 0
-    gtimeout 900 uv run --script "$CHECK" check --plannotator "$staged" || die "the browser check did not pass; nothing installed"
-    updates_off
-    install_bin "$staged"
-    tag_and_push "$release" ;;
+  stage)
+    preflight_tree
+    preflight_host
+    fetch_releases || stop 75 "the release tags cannot be fetched"
+    build "$(base_release)" ;;
+  push) preflight_tree; push_mine ;;
+  install) preflight_tree; install_staged ;;
+  replay | all)
+    preflight_tree
+    fetch_releases || stop 75 "the release tags cannot be fetched"
+    target=${to:-$(releases | tail -n 1)}
+    if [[ -n $newer_than ]]; then
+      since=$(base_release "$newer_than") || die "no release tag below $newer_than"
+      [[ $since != "$target" ]] || stop 5 "no release is newer than $target, the release of $newer_than"
+    fi
+    replay_and_stage "$target"
+    [[ $mode == replay ]] && exit 0
+    push_mine
+    install_staged ;;
 esac

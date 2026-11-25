@@ -144,18 +144,30 @@ A replay changes the commit names; check each new code patch the same way before
 
 - `plannotator-rebuild --check`: the installed build, the release `mine` is on, and how many
   releases came after it.
-- `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
-  the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' thirty-three suites in upstream's test sandbox (`--full`: every unit
-  suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
-  on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
-  a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.
+- `plannotator-rebuild --replay` (or `--to TAG`): replays `mine` onto the newest release, syncs the
+  tree to the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe,
+  runs `bun run typecheck` and the patches' thirty-three suites in upstream's test sandbox (`--full`:
+  every unit suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the
+  browser check on it. It pushes nothing and installs nothing. With `--newer-than REV` and no
+  `--to`, it stops first (exit 5) unless a release is newer than REV's.
+- `plannotator-rebuild --push`: tags `mine` `mine-<release>.<n>` (a commit that has its tag keeps
+  it) and pushes `mine` (`--force-with-lease`) and the tag.
+- `plannotator-rebuild --install`: installs the staged binary over `~/.local/bin/plannotator` by a
+  rename. The binary it replaces is kept as `~/.local/bin/plannotator-previous`.
+- `--push` and `--install` accept only a staged binary built from `mine` as it is.
+- `plannotator-rebuild` (or `--to TAG`): `--replay`, `--push` and `--install` in one run, in that
+  order, each only when the one before it passed.
+- The exit status names the outcome: 0 done, 1 failed, 2 a wrong argument, 3 a conflict, 4 a failed
+  browser check, 5 no newer release, 75 a transient failure (no network, the build host does not
+  answer, or the browser check could not run). The tmux annotate plugin's daily update runs these
+  steps in a clone of its own, and reads them.
 - A conflict aborts the replay, names the files, and leaves `mine` as it was. Replay by hand
   (`git rebase --onto <new> <old> mine`; rerere remembers each resolution), read
   `git range-diff <old>..<old mine> <new>..mine`, then run `plannotator-rebuild` again.
 - `--stage`: build and test `mine` as it is; install nothing.
 - `--rollback`: put back `~/.local/bin/plannotator-official`, the official binary kept at the first
-  install (and again after `plannotator update`).
+  install (and again after `plannotator update`). To go back one build of this fork:
+  `mv ~/.local/bin/plannotator-previous ~/.local/bin/plannotator`.
 
 ## What the build is
 
