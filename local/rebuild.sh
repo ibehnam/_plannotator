@@ -8,12 +8,15 @@
 #                                    replay `mine` onto TAG (default: the newest release), build, test,
 #                                    stage the binary and check it; push and install nothing.
 #                                    --newer-than: stop unless a release is newer than REV's
+#   plannotator-rebuild --newest     fetch the release tags and print the newest release
 #   plannotator-rebuild --push       tag `mine` mine-<release>.<n> (once a commit), push it and the tag
 #   plannotator-rebuild --install    install the staged binary; the one it replaces is kept as
 #                                    plannotator-previous
 #   plannotator-rebuild --stage      build and test `mine` as it is and stage the binary; install nothing
 #   plannotator-rebuild --rollback   put the official binary back
-#   --full                           test with upstream's whole unit suite, not only the patches' suites
+#   --full                           gate on upstream's whole unit suite, on `mine` and on its release:
+#                                    only a test that fails on `mine`, passes on the release, and fails
+#                                    again when its file runs once more on `mine` fails
 #
 # --push and --install accept only a staged binary built from `mine` as it is.
 # Exit status: 0 done; 1 failed; 2 a wrong argument; 3 the patches conflict with the release (mine is
@@ -124,6 +127,74 @@ case $step in
     bun run typecheck
     bash apps/pi-extension/vendor.sh
     bun run test:sandbox "${files[@]}" -- --timeout=30000 ;;
+  gate) # $1: the release; then the files no run takes. The whole unit suite, run to its end, on the
+    # fork's tree and on the release's own checkout, with one runner's flags; a release's result is kept
+    # per tag and this host's environment (system, Bun, this script). A test that fails on the fork and
+    # passes on the release has its file run once more on the fork: passing then, it is intermittent
+    # (reported, cause not identified); failing twice, it stops the gate (exit 1). A run with no counts
+    # did not happen (exit 3).
+    exec </dev/null
+    release=$1
+    shift
+    env=$(printf '%s|%s|%s' "$(uname -nrm)" "$(bun --version)" "$(shasum "$root/host.sh" | cut -c1-12)" | shasum | cut -c1-12)
+    mkdir -p "$root/legs"
+    run() { # name [files...] -> legs/<name>.fails ("file > test", sorted) and .counts ("pass fail")
+      local name=$1 rc=0
+      shift
+      bun run test:sandbox "$@" -- --timeout=30000 > "$root/legs/$name.log" 2>&1 || rc=$?
+      # Counts only from a run that ended by itself (bun's 0 or 1): a stopped run is never kept.
+      [[ $rc == 0 || $rc == 1 ]] || { tail -n 20 "$root/legs/$name.log"; echo "the $name run stopped (rc $rc)"; exit 3; }
+      awk -v counts="$root/legs/$name.counts" '
+        /^bun test v/ { summary = 0 }
+        / tests? failed:$/ { summary = 1 }
+        !summary && /^[^ (].*[.]test[.]tsx?:$/ { file = substr($0, 1, length($0) - 1) }
+        !summary && /^[(]fail[)] / { t = substr($0, 8); sub(/ [[][0-9.]+ms[]]$/, "", t); print file " > " t }
+        /^ [0-9]+ pass$/ { pass += $1; seen = 1 }
+        /^ [0-9]+ fail$/ { fail += $1 }
+        END { if (seen) print pass + 0, fail + 0 > counts }' "$root/legs/$name.log" | LC_ALL=C sort -u > "$root/legs/$name.fails"
+      [[ -s $root/legs/$name.counts ]] || { tail -n 20 "$root/legs/$name.log"; echo "the $name run ran no test (rc $rc)"; exit 3; }
+    }
+    leg() { # name dir: every test file of the tree in DIR
+      local name=$1 dir=$2 files
+      cd "$dir"
+      bun install --frozen-lockfile >/dev/null && bash apps/pi-extension/vendor.sh >/dev/null ||
+        { echo "the $name leg could not be set up"; exit 3; }
+      mapfile -t files < <(git ls-files '*.test.ts' '*.test.tsx' | grep -vxF "${skip[@]/#/-e}")
+      run "$name" "${files[@]}"
+    }
+    skip=("$@")
+    rm -f "$root/legs/fork".*
+    (cd "$root/src" && bun run typecheck) || { echo "typecheck failed"; exit 3; }
+    leg fork "$root/src"
+    if [[ -s $root/legs/$release-$env.counts ]]; then
+      kept=kept
+    else
+      kept=run
+      rm -rf "$root/release-src"
+      git clone --quiet "$root/src" "$root/release-src" &&
+        git -C "$root/release-src" checkout --quiet --detach "refs/tags/$release" ||
+        { echo "no checkout of $release"; exit 3; }
+      leg "$release-$env" "$root/release-src"
+    fi
+    read -r fpass ffail < "$root/legs/fork.counts"
+    read -r rpass rfail < "$root/legs/$release-$env.counts"
+    echo "fork leg: $fpass pass, $ffail fail"
+    echo "release leg $release ($kept): $rpass pass, $rfail fail"
+    only=$(LC_ALL=C comm -23 "$root/legs/fork.fails" "$root/legs/$release-$env.fails")
+    flaky=""
+    if [[ -n $only ]]; then
+      mapfile -t again < <(sed 's/ > .*//' <<<"$only" | LC_ALL=C sort -u)
+      cd "$root/src"
+      PLANNOTATOR_REBUILD_RERUN=1 run fork-rerun "${again[@]}"
+      flaky=$(LC_ALL=C comm -23 <(printf '%s\n' "$only") "$root/legs/fork-rerun.fails")
+      only=$(LC_ALL=C comm -12 <(printf '%s\n' "$only") "$root/legs/fork-rerun.fails")
+    fi
+    echo "intermittent failures: $(grep -c . <<<"$flaky" || true)"
+    [[ -z $flaky ]] || sed 's/^/intermittent: /' <<<"$flaky"
+    echo "fork-only failures: $(grep -c . <<<"$only" || true)"
+    [[ -z $only ]] && exit 0
+    sed 's/^/fork-only: /' <<<"$only"
+    exit 1 ;;
   *) echo "host.sh: unknown step $step" >&2; exit 2 ;;
 esac
 HOST
@@ -255,7 +326,13 @@ build() {
   pin=$(viewer_pin "$release")
   on_host 2400 build "$version" "$pin" </dev/null
   if ((full)); then
-    g ls-files '*.test.ts' '*.test.tsx' | grep -vxF "${refused[@]/#/-e}" | on_host 7200 test
+    rc=0
+    on_host 18000 gate "$release" "${refused[@]}" || rc=$?
+    case $rc in
+      0) ;;
+      1) die "tests fail on mine and pass on $release (the fork-only lines above name them)" ;;
+      *) die "the whole unit suite did not run on $BUILD_HOST (rc $rc)" ;;
+    esac
   else
     printf '%s\n' "${suites[@]}" | on_host 2400 test
   fi
@@ -367,6 +444,7 @@ while (($#)); do
   case $1 in
     --check) mode=check ;;
     --replay) mode=replay ;;
+    --newest) mode=newest ;;
     --push) mode=push ;;
     --install) mode=install ;;
     --stage) mode=stage ;;
@@ -392,6 +470,9 @@ case $mode in
     preflight_host
     fetch_releases || stop 75 "the release tags cannot be fetched"
     build "$(base_release)" ;;
+  newest)
+    fetch_releases || stop 75 "the release tags cannot be fetched"
+    releases | tail -n 1 ;;
   push) preflight_tree; push_mine ;;
   install) preflight_tree; install_staged ;;
   replay | all)

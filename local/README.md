@@ -154,10 +154,16 @@ route; that suite, `tests/parity/vendor-parity.test.ts` and the route's own Pi s
 - `plannotator-rebuild --replay` (or `--to TAG`): replays `mine` onto the newest release, syncs the
   tree with its Git data to the build host's `~/.cache/plannotator-build/src`, builds it with
   upstream's CI recipe, runs `bun run typecheck`, the Pi extension's vendor step and thirty-seven
-  suites in upstream's test sandbox (`--full`: every unit suite), each test allowed 30 s, since the
-  build host scans each new executable at its first exec. It stages the binary at
-  `~/.cache/plannotator-build/plannotator`, and runs the browser check on it. It pushes nothing and installs nothing. With `--newer-than REV` and no
-  `--to`, it stops first (exit 5) unless a release is newer than REV's.
+  suites in upstream's test sandbox, each test allowed 30 s, since the build host scans each new
+  executable at its first exec. `--full` runs upstream's whole unit suite on `mine` and on the
+  release's own checkout instead, and stops only on a test that fails on `mine` and passes on the
+  release (some of upstream's own tests fail on the build host), and fails again when its file runs
+  once more on `mine`; one that passes then is reported as intermittent. The release's result is
+  kept per tag and build host, so an unchanged release runs only `mine`'s half. It stages the binary at
+  `~/.cache/plannotator-build/plannotator`, and runs the browser check on it. It pushes nothing
+  and installs nothing. With `--newer-than REV` and no `--to`, it stops first (exit 5) unless a
+  release is newer than REV's.
+- `plannotator-rebuild --newest`: fetches the release tags and prints the newest release.
 - `plannotator-rebuild --push`: tags `mine` `mine-<release>.<n>` (a commit that has its tag keeps
   it) and pushes `mine` (`--force-with-lease`) and the tag.
 - `plannotator-rebuild --install`: installs the staged binary over `~/.local/bin/plannotator` by a
