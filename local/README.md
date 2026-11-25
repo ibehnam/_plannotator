@@ -62,7 +62,8 @@
 27. **The done screen's tab closes whatever opened it** (`close-tab.ts`'s held request and
     `settleSession`, `useAutoClose`'s early ask): a tab that cannot close itself asks the server as
     the done screen appears, the server closes it when the countdown ends and stays up for it; the
-    browsers are checked at once, and a timeout or an ended session says so.
+    browsers are checked at once, and a timeout or an ended session says so. The Pi extension's
+    servers route `/api/close-tab` to the same handler (vendored), as upstream's route parity asks.
 28. Those, described in the agent guides (its own commit, as 5).
 29. **Only a lone Alt switches Select and Pinpoint** (`hooks/useInputMethodSwitch`): Alt with Cmd, Ctrl
     or Shift held, or with another key while it is down, is a chord (a Hyper key's Escape, Alt+1); a
@@ -134,6 +135,9 @@ A replay changes the commit names; check each new code patch the same way before
 On 2026-11-25 patches 27 and 35 gained `windowsHide: true` on their spawns (`close-tab.ts`,
 `plan-review-gate.ts`), which upstream's `tests/windows-hide-guard.test.ts` asks of every spawn; that
 suite is now in `suites` too, so each build runs it, and the commits from patch 27 on have new names.
+Patch 27 also routes `/api/close-tab` on the Pi extension's three servers, through the same handler
+(vendored, `handleCloseTabRoute`), which upstream's `tests/parity/route-parity.test.ts` asks of every
+route; that suite, `tests/parity/vendor-parity.test.ts` and the route's own Pi suite are in `suites`.
 
 ## Setup, once per machine
 
@@ -149,7 +153,7 @@ suite is now in `suites` too, so each build runs it, and the commits from patch 
   releases came after it.
 - `plannotator-rebuild --replay` (or `--to TAG`): replays `mine` onto the newest release, syncs the
   tree with its Git data to the build host's `~/.cache/plannotator-build/src`, builds it with
-  upstream's CI recipe, runs `bun run typecheck`, the Pi extension's vendor step and thirty-four
+  upstream's CI recipe, runs `bun run typecheck`, the Pi extension's vendor step and thirty-seven
   suites in upstream's test sandbox (`--full`: every unit suite), each test allowed 30 s, since the
   build host scans each new executable at its first exec. It stages the binary at
   `~/.cache/plannotator-build/plannotator`, and runs the browser check on it. It pushes nothing and installs nothing. With `--newer-than REV` and no

@@ -73,6 +73,9 @@ suites=(
   apps/hook/server/plan-review-gate.test.ts
   apps/hook/hooks/mod/plan-review-gate.test.ts
   tests/windows-hide-guard.test.ts
+  tests/parity/route-parity.test.ts
+  tests/parity/vendor-parity.test.ts
+  apps/pi-extension/server/close-tab-route.test.ts
 )
 # Files upstream's sandbox refuses to run (scripts/test-sandbox.ts REFUSED).
 refused=(apps/pi-extension/inbox.test.ts tests/never-touch-the-real-inbox.test.ts)
