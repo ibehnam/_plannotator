@@ -80,6 +80,13 @@
     first block in view), written as the reader moves and before another page opens, and given back on Back, Forward
     and a reload; two entries of one page keep a place each.
 34. That, described in the agent guides (its own commit, as 5).
+35. **With plan review off, a review gate may ask for one plan's review** (`apps/hook/server/plan-review-gate.ts`,
+    the plan hook in `index.ts`): where the person's own `PLANNOTATOR_PLAN_REVIEW` (or `planReview`) turns plan
+    review off, the `ExitPlanMode` permission request runs `PLANNOTATOR_PLAN_REVIEW_GATE` with `/bin/sh -c`, the
+    hook event on its stdin. Exit 0 within 5 s opens the classic review; anything else gives no decision, as
+    upstream does, and with no gate nothing runs. A host's own plan card never asks it. Its suites also keep the one
+    upstream behaviour it needs: with plan review off, the mod passes `ExitPlanMode` on.
+36. That, described in the agent guides (`environment.md`, its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
@@ -97,7 +104,7 @@
   releases came after it.
 - `plannotator-rebuild` (or `--to TAG`): replays `mine` onto the newest release, syncs the tree to
   the build host's `~/.cache/plannotator-build/src`, builds it with upstream's CI recipe, runs
-  `bun run typecheck` and the patches' thirty-one suites in upstream's test sandbox (`--full`: every unit
+  `bun run typecheck` and the patches' thirty-three suites in upstream's test sandbox (`--full`: every unit
   suite), stages the binary at `~/.cache/plannotator-build/plannotator`, and runs the browser check
   on it. Only when all of that passes does it install the binary over `~/.local/bin/plannotator` by
   a rename, tag `mine-<release>.<n>`, and push `mine` (`--force-with-lease`) and the tag.
