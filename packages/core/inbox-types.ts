@@ -2692,7 +2692,7 @@ export const INBOX_AGENT_IDS: readonly InboxAgentId[] = [
 export const INBOX_AGENT_LABELS: Readonly<Record<InboxAgentId, string>> = {
   "claude-code": "Claude Code",
   codex: "Codex",
-  gemini: "Gemini CLI",
+  gemini: "AGY",
   qwen: "Qwen Code",
   cursor: "Cursor",
   windsurf: "Windsurf / Devin",
@@ -3300,7 +3300,7 @@ export function inboxToolCostText(host: InboxToolCostHost): string {
   return `about ${Math.round(cost.bytes / 1000)} KB, roughly ${cost.tokens.toLocaleString("en-US")} tokens`;
 }
 
-/** "Codex, Gemini CLI and Pi" for note agents. */
+/** "Codex, AGY and Pi" for note agents. */
 export function inboxNoteAgentList(ids: readonly InboxNoteAgentId[]): string {
   return inboxAgentList(ids);
 }

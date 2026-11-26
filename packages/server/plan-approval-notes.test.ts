@@ -4,7 +4,7 @@
  * passed through unchanged either way.
  *
  * What regresses if this fails: the plan tab offers "Approve with notes" on a
- * host that drops them (the classic Claude Code hook, Gemini CLI), so the
+ * host that drops them (the classic Claude Code hook, the pre-rebrand Gemini CLI's hook), so the
  * reviewer's comments vanish with a green button; or a host that delivers
  * them (the Claude Code mod, OpenCode, Pi) never gets the row. Absent must
  * read as false so an unknown host is never offered a row that loses text.

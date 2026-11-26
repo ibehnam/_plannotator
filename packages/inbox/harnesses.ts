@@ -46,7 +46,7 @@ export const HARNESSES: readonly Harness[] = [
   { id: 'cursor', label: 'Cursor' },
   { id: 'vscode', label: 'VS Code' },
   { id: 'windsurf', label: 'Windsurf / Devin' },
-  { id: 'gemini', label: 'Gemini CLI' },
+  { id: 'gemini', label: 'AGY' },
   { id: 'antigravity', label: 'Antigravity' },
   { id: 'qwen', label: 'Qwen Code' },
   { id: 'goose', label: 'Goose' },
@@ -219,7 +219,7 @@ export function harnessPanel(id: HarnessId, ctx: ConnectContext): HarnessPanel {
     case 'gemini':
       return {
         artefacts: [{ kind: 'code', text: `gemini mcp add -s user ${SERVER} ${cmd}` }],
-        note: 'Adds it to Gemini CLI in every project.',
+        note: 'Adds it to AGY in every project.',
       };
     case 'antigravity':
       return {

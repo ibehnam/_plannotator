@@ -1,6 +1,6 @@
 #!/bin/bash
 # Manual QA: runs with your real HOME and Plannotator config on purpose. For an isolated test run, use `bun run test:sandbox`.
-# Sandbox test for Gemini CLI integration
+# Sandbox test for the pre-rebrand Gemini CLI integration
 #
 # Usage:
 #   ./sandbox-gemini.sh              # Use local patched build
@@ -158,7 +158,7 @@ fi
 
 # --- Mode: nightly ---
 if [ "$MODE" = "--nightly" ]; then
-    echo "Installing Gemini CLI nightly (includes exit_plan_mode fix)..."
+    echo "Installing the pre-rebrand Gemini CLI nightly (includes exit_plan_mode fix)..."
     npm install -g @google/gemini-cli@nightly 2>&1 | tail -3
     echo ""
 fi
@@ -173,7 +173,7 @@ else
     GEMINI_BIN="gemini"
 fi
 
-echo "=== Starting Gemini CLI ==="
+echo "=== Starting the pre-rebrand Gemini CLI ==="
 echo ""
 echo "Instructions:"
 echo "  1. Type /plan to enter plan mode"

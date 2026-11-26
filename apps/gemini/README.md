@@ -1,6 +1,8 @@
-# Plannotator for Gemini CLI
+# Plannotator for AGY
 
-Interactive plan review, code review, and markdown annotation for Google Gemini CLI.
+Interactive plan review, code review, and markdown annotation for AGY, Google's Antigravity CLI.
+
+> Google renamed Gemini CLI to AGY. Everything below is the integration as built for the pre-rebrand Gemini CLI: its policy file, its `BeforeTool` hook and its `exit_plan_mode` tool. AGY does not have them. The names stay as they were: the `gemini` command, `~/.gemini`, this folder.
 
 ## Install
 
@@ -18,7 +20,7 @@ curl -fsSL https://plannotator.ai/install.sh | bash
 irm https://plannotator.ai/install.ps1 | iex
 ```
 
-The installer auto-detects Gemini CLI (checks for `~/.gemini`) and configures:
+The installer looks for `~/.gemini` and configures, for the pre-rebrand Gemini CLI:
 
 - **Policy file** at `~/.gemini/policies/plannotator.toml` — allows `exit_plan_mode` without the TUI confirmation dialog
 - **Hook** in `~/.gemini/settings.json` — intercepts `exit_plan_mode` and opens the browser review UI
@@ -28,7 +30,7 @@ The installer auto-detects Gemini CLI (checks for `~/.gemini`) and configures:
 
 ### Plan Mode Integration
 
-When you use `/plan` in Gemini CLI:
+When you use `/plan` in the pre-rebrand Gemini CLI:
 
 1. The agent creates a plan and calls `exit_plan_mode`
 2. The user policy auto-allows `exit_plan_mode` (skipping the TUI dialog)
@@ -80,7 +82,7 @@ If the installer didn't auto-configure your settings (e.g. `~/.gemini/settings.j
 
 ## Requirements
 
-- Gemini CLI 0.36.0 or later
+- The pre-rebrand Gemini CLI 0.36.0 or later
 - `plannotator` binary on PATH
 
 ## Links

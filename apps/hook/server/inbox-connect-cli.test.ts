@@ -77,7 +77,7 @@ test("--background never connects; a person's run on that Inbox does; a later ru
   const person = await cli(w, ["inbox", "--no-open"]);
   expect(person.code).toBe(0);
   expect(person.stdout).toBe("");
-  expect(person.stderr).toContain("Connected Codex and Gemini CLI to the Inbox.");
+  expect(person.stderr).toContain("Connected Codex and AGY to the Inbox.");
   expect(person.stderr).toContain("Agents use it from their next session.");
   expect(adds(w).sort()).toEqual(["codex", "gemini"]);
 
@@ -178,7 +178,7 @@ test("plannotator inbox --notes adds only the notes named, starts nothing, and a
   expect(result.stderr).toContain("Cursor: nothing written. Cursor keeps its rules in the app: copy the note above into Customize → Rules in Cursor.");
   expect(result.stderr).toContain("Plannotator can't see, update or remove that copy.");
   expect(result.stderr).toContain("Codex: Added a marked section to ~/.codex/AGENTS.md.");
-  expect(result.stderr).toContain("Gemini CLI: Created ~/.gemini/GEMINI.md.");
+  expect(result.stderr).toContain("AGY: Created ~/.gemini/GEMINI.md.");
   expect(readFileSync(join(w.home, ".codex", "AGENTS.md"), "utf8")).toContain(INBOX_NOTE_START);
   expect(existsSync(join(w.home, ".pi"))).toBe(false);
   expect(existsSync(join(w.home, ".cursor"))).toBe(false);

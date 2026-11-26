@@ -31,7 +31,7 @@ test("every payload the client builds is one the Worker accepts", () => {
 });
 
 test("the client's agent names are ones the Worker keeps as they are", () => {
-  const names = ["Claude Code", "Codex", "Pi", "OpenCode", "Qwen Code", "DeepSeek Harness", "T3 Code", "Windsurf / Devin", "Gemini CLI"];
+  const names = ["Claude Code", "Codex", "Pi", "OpenCode", "Qwen Code", "DeepSeek Harness", "T3 Code", "Windsurf / Devin", "AGY"];
   const payload = client.productFeedbackPayload({ message: "x" }, { version: "dev", os: "macOS", surface: "inbox", agents: names });
   // The client caps at the Worker's limit, so the Worker drops nothing the client sent.
   expect(payload.agents).toEqual(names.slice(0, client.FEEDBACK_AGENTS_MAX));

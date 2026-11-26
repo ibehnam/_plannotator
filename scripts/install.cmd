@@ -1724,7 +1724,7 @@ REM is no settings.json package-skills filter to configure. See :UpdatePiExtensi
 where pi >nul 2>&1
 if !ERRORLEVEL! equ 0 call :UpdatePiExtension
 
-REM --- Gemini CLI support (only if Gemini is installed) ---
+REM --- Pre-rebrand Gemini CLI support (only if Gemini is installed) ---
 REM HONEST three-state reporting (#1178): detected-but-skipped is its own
 REM state. A Gemini opt-out leaves ~/.gemini entirely untouched.
 if exist "%USERPROFILE%\.gemini" if "!SKIP_GEMINI!"=="1" (
@@ -1739,7 +1739,7 @@ if exist "%USERPROFILE%\.gemini" if "!SKIP_GEMINI!"=="0" (
     REM Install policy file
     if not exist "%USERPROFILE%\.gemini\policies" mkdir "%USERPROFILE%\.gemini\policies"
     (
-echo # Plannotator policy for Gemini CLI
+echo # Plannotator policy for the pre-rebrand Gemini CLI
 echo # Allows exit_plan_mode without TUI confirmation so the browser UI is the sole gate.
 echo [[rule]]
 echo toolName = "exit_plan_mode"
@@ -1775,7 +1775,7 @@ echo }
     ) else (
         findstr /c:"plannotator" "%USERPROFILE%\.gemini\settings.json" >nul 2>&1
         if !ERRORLEVEL! neq 0 (
-            REM Merge hook into existing settings.json using node (ships with Gemini CLI)
+            REM Merge hook into existing settings.json using node (ships with the pre-rebrand Gemini CLI)
             where node >nul 2>&1
             if !ERRORLEVEL! equ 0 (
                 set "GEMINI_SETTINGS_PATH=%USERPROFILE%\.gemini\settings.json"

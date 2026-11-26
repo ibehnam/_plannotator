@@ -380,7 +380,7 @@ test("the Inbox tool switch of Claude Code, Pi and OpenCode stays in reach when 
 test("the card never writes a note for an agent not found here, and a question whose every add failed stays open", async () => {
   const s = await start();
   const answer = (await (await post(s, "/api/inbox/agents/notes", { add: ["gemini"] })).json()) as Model & { results: { ok: boolean; reason?: string }[] };
-  expect(answer.results).toEqual([{ ok: false, agent: "gemini", reason: "Gemini CLI was not found on this computer", path: null }] as never);
+  expect(answer.results).toEqual([{ ok: false, agent: "gemini", reason: "AGY was not found on this computer", path: null }] as never);
   expect(answer.notes_offered).toBe(false);
   expect(existsSync(join(fake.home, ".gemini"))).toBe(false);
 });
@@ -388,7 +388,7 @@ test("the card never writes a note for an agent not found here, and a question w
 test("Settings' note switch refuses an agent not found here too, and writes nothing", async () => {
   const s = await start();
   const refused = (await (await post(s, "/api/inbox/agents", { agent: "gemini", note: true })).json()) as Model & { error: string | null };
-  expect(refused.error).toBe("Gemini CLI was not found on this computer");
+  expect(refused.error).toBe("AGY was not found on this computer");
   expect(existsSync(join(fake.home, ".gemini"))).toBe(false);
   expect(existsSync(join(dataDir, "inbox", "agent-notes.json"))).toBe(false);
 });

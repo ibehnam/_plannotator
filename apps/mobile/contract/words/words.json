@@ -42,7 +42,7 @@
       "source": "packages/core/inbox-types.ts INBOX_AGENT_LABELS codex"
     },
     "agent.gemini": {
-      "text": "Gemini CLI",
+      "text": "AGY",
       "parts": [],
       "source": "packages/core/inbox-types.ts INBOX_AGENT_LABELS gemini"
     },

@@ -1,5 +1,5 @@
 /**
- * Plannotator CLI for Claude Code, Droid, Codex, Gemini CLI, Copilot CLI, and
+ * Plannotator CLI for Claude Code, Droid, Codex, AGY, Copilot CLI, and
  * DeepSeek Harness
  *
  * Supports fifteen modes:
@@ -3632,14 +3632,14 @@ if (args[0] === "sessions") {
     historyAgent: planHistoryAgent(!isQwen && !isGemini && detectedOrigin === "claude-code" ? event.session_id : undefined),
     origin: isQwen ? "qwen-code" : isGemini ? "gemini-cli" : detectedOrigin,
     // No approvalNotesSupported: Claude Code's PermissionRequest allow carries
-    // no message, Gemini CLI shows a systemMessage to the person, not the
+    // no message, the pre-rebrand Gemini CLI's hook shows a systemMessage to the person, not the
     // model, and Qwen Code ignores a hook's allow on exit_plan_mode, so notes
     // sent with an approval would be lost.
     // Claude Code writes the plan to disk before the hook fires.
     planFilePath: isGemini || isQwen ? undefined : event.tool_input?.planFilePath,
     // Claude Code sets CLAUDE_PROJECT_DIR (the session's project root) for
     // hooks; a shell cd does not move it, so a chain under its project is
-    // continued (#2197). Gemini CLI and Qwen Code set the same variable as an
+    // continued (#2197). The pre-rebrand Gemini CLI and Qwen Code set the same variable as an
     // alias: left out of the Claude Code check. Qwen's own QWEN_PROJECT_DIR
     // (the session's working directory) plays the same part for Qwen.
     historyRoot: isQwen

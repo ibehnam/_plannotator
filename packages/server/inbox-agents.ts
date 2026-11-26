@@ -9,7 +9,7 @@
  * `<this CLI> inbox mcp`:
  *
  *  - through the agent's own `mcp add` command where it has one (Codex,
- *    Gemini CLI, Windsurf/Devin, Amp, Cline, Pi without Plannotator's
+ *    AGY, Windsurf/Devin, Amp, Cline, Pi without Plannotator's
  *    extension), so Plannotator never edits TOML or JSONC itself;
  *  - else as one key in a plain-JSON file, after a strict parse (Cursor,
  *    Kiro, the Claude desktop app);
@@ -431,7 +431,7 @@ const ANTIGRAVITY_DATA_FOLDERS = Object.values(INBOX_ANTIGRAVITY_DATA_DIRS);
 export function antigravityMcpConfig(e: AgentEnvironment): string {
   return join(e.homeDir, ".gemini", "config", "mcp_config.json");
 }
-/** Gemini CLI's folder: `.gemini` under `$GEMINI_CLI_HOME` when set, else under the home folder. */
+/** AGY's folder: `.gemini` under `$GEMINI_CLI_HOME` when set, else under the home folder. */
 export function geminiDir(e: AgentEnvironment): string {
   return join(envDir(e, "GEMINI_CLI_HOME") ?? e.homeDir, ".gemini");
 }
@@ -1090,7 +1090,7 @@ export function claudeCodeInboxToolOn(e: AgentEnvironment): boolean {
  * build older than its `mcp add` is left to the person: Pi before 0.99 (no
  * `pi mcp`: it would read the words as a chat prompt and run a model turn),
  * Codex CLI before 0.35.0 (`codex mcp add` landed in rust-v0.35.0, Sep 2025)
- * and Gemini CLI before 0.1.19 (`gemini mcp add`, Aug 2025). Qwen Code's
+ * and the pre-rebrand Gemini CLI before 0.1.19 (`gemini mcp add`, Aug 2025). Qwen Code's
  * settings.json is edited by Plannotator itself, so any Qwen Code version
  * will do; the line only tells Qwen Code from another `qwen`. Read with no
  * stdin, under the limit.
@@ -1105,8 +1105,8 @@ const VERSION_SHAPES: Record<string, { line: RegExp; min?: [number, number, numb
   gemini: {
     line: /^(\d+)\.(\d+)\.(\d+)(?:-[\w.]+)?$/,
     min: [0, 1, 19],
-    older: "Gemini CLI before 0.1.19 has no `gemini mcp add`; update Gemini CLI, or add plannotator-inbox to its settings.json by hand",
-    manual: "this gemini did not answer like Gemini CLI",
+    older: "The pre-rebrand Gemini CLI before 0.1.19 has no `gemini mcp add`; update it, or add plannotator-inbox to its settings.json by hand",
+    manual: "this gemini did not answer like AGY",
   },
   qwen: {
     line: /^(\d+)\.(\d+)\.(\d+)(?:-[\w.]+)?$/,

@@ -3088,7 +3088,7 @@ describe("configs uninstall cannot read keep the CLI", () => {
     ["Codex", [".codex", "config.toml"], "[features]\nhooks = true\n"],
     ["Codex", [".codex", "hooks.json"], "{}"],
     ["OpenCode", [".config", "opencode", "opencode.json"], "{}"],
-    ["Gemini CLI", [".gemini", "settings.json"], "{}"],
+    ["AGY", [".gemini", "settings.json"], "{}"],
   ] as const)("%s's %j it cannot read names the file, the tool and what to do", async (owner, parts, content) => {
     const fixture = createFixture();
     const binary = join(fixture.homeDir, ".local", "bin", "plannotator");

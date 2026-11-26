@@ -155,7 +155,7 @@ Options:
                          { "skipInstall": { "codex": true } } in
                          config.json in your Plannotator data folder
                          (`plannotator data-dir`) (flag > env var > config).
-  --skip-gemini          Same opt-out for the Gemini CLI integration
+  --skip-gemini          Same opt-out for the pre-rebrand Gemini CLI integration
                          (~/.gemini policy, settings hook, commands). Env var:
                          PLANNOTATOR_SKIP_GEMINI_INSTALL; config key:
                          skipInstall.gemini.
@@ -3155,7 +3155,7 @@ fi
 # anyone on an older extension that declared the skill in its manifest.
 update_pi_extension_if_present
 
-# --- Gemini CLI support (only if Gemini is installed) ---
+# --- Pre-rebrand Gemini CLI support (only if Gemini is installed) ---
 if [ -d "$HOME/.gemini" ] && [ "$skip_gemini" -eq 1 ]; then
     # HONEST three-state reporting (#1178): detected-but-skipped is its own
     # state. Nothing under ~/.gemini is created, updated, or removed.
@@ -3169,7 +3169,7 @@ elif [ -d "$HOME/.gemini" ]; then
     GEMINI_POLICIES_DIR="$HOME/.gemini/policies"
     mkdir -p "$GEMINI_POLICIES_DIR"
     cat > "$GEMINI_POLICIES_DIR/plannotator.toml" << 'GEMINI_POLICY_EOF'
-# Plannotator policy for Gemini CLI
+# Plannotator policy for the pre-rebrand Gemini CLI
 # Allows exit_plan_mode without TUI confirmation so the browser UI is the sole gate.
 [[rule]]
 toolName = "exit_plan_mode"
@@ -3184,7 +3184,7 @@ GEMINI_POLICY_EOF
 
     if [ -f "$GEMINI_SETTINGS" ]; then
         if ! grep -q '"plannotator"' "$GEMINI_SETTINGS" 2>/dev/null; then
-            # Merge hook into existing settings.json using node (ships with Gemini CLI)
+            # Merge hook into existing settings.json using node (ships with the pre-rebrand Gemini CLI)
             if command -v node &>/dev/null; then
                 node -e "
                   const fs = require('fs');

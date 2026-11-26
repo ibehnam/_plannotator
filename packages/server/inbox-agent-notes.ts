@@ -4,7 +4,7 @@
  *
  * Written by itself (approval "inbox-agent-note-auto", which superseded the
  * one-time dialog) for every connected agent proven to load it
- * (INBOX_NOTE_AUTO_AGENT_IDS: Claude Code, Codex, Gemini CLI, Pi, OpenCode),
+ * (INBOX_NOTE_AUTO_AGENT_IDS: Claude Code, Codex, AGY, Pi, OpenCode),
  * once per agent, at the Inbox's start and after each connecting run
  * (autoAddInboxNotes). Never for an agent already asked (an old dialog's Not
  * now or Don't add a note), one the person turned off in Settings, or with
@@ -26,12 +26,12 @@
  *  - Pi: the first that exists of `AGENTS.override.md`, `AGENTS.md`,
  *    `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD` (Pi reads only one); `AGENTS.md`
  *    created only when none does.
- *  - Gemini CLI: `~/.gemini/<context.fileName>`, default `GEMINI.md`.
+ *  - AGY: `~/.gemini/<context.fileName>`, default `GEMINI.md`.
  *  - Qwen Code: `$QWEN_HOME/<context.fileName>` (default folder `~/.qwen`), default `QWEN.md`.
  *  - Cursor: copied by hand into Customize → Rules in the app; Cursor documents no global rules file, so nothing is written.
  *
  * The block sits between markers at the END of the file, or right above a
- * Gemini CLI or Qwen Code memory section (`## Gemini Added Memories`, `## Qwen
+ * pre-rebrand Gemini CLI or Qwen Code memory section (`## Gemini Added Memories`, `## Qwen
  * Added Memories`): their memory tools add to that section up to the next `## `
  * heading, which would otherwise be the note's own. Exactly one start
  * before exactly one end: the block is ours; none: appended; anything else:
@@ -363,8 +363,8 @@ interface NoteTarget {
 
 /**
  * The instruction file name an agent's settings.json names (`context.fileName`,
- * a string or a list; the first), else `fallback`. Gemini CLI and Qwen Code
- * (a Gemini CLI fork) read it the same way.
+ * a string or a list; the first), else `fallback`. The pre-rebrand Gemini CLI and Qwen Code
+ * (a fork of it) read it the same way.
  */
 function contextFileName(settingsPath: string, fallback: string): string {
   const read = readAgentFile(settingsPath);
@@ -490,7 +490,7 @@ function appendBlock(text: string, nl: string): string {
 }
 
 /**
- * The memory sections Gemini CLI's `save_memory` and Qwen Code's global memory
+ * The memory sections the pre-rebrand Gemini CLI's `save_memory` and Qwen Code's global memory
  * write add to. Both find the header as the first occurrence of this text
  * anywhere in the file and add the new item at the end of the section, which
  * runs to the next `\n## `. A note after such a section would be that next

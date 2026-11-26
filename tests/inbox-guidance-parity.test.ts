@@ -10,11 +10,11 @@
  *  - the `plannotator_inbox` tool: Claude Code (the mod's contract copy and
  *    bundled tool list), Pi and OpenCode 2 (the shared contract, wake form),
  *    OpenCode 1 (no wake);
- *  - the Inbox's MCP server instructions: Codex, Gemini CLI, Cursor, Grok
+ *  - the Inbox's MCP server instructions: Codex, AGY, Cursor, Grok
  *    Build run by the Inbox, the Claude app, any MCP client;
  *  - the session reminder (Claude Code's session start and compaction hook,
  *    Pi, OpenCode 2; the no-wake form on OpenCode 1);
- *  - the opt-in note (Claude Code, Codex, OpenCode, Pi, Gemini CLI, Cursor);
+ *  - the opt-in note (Claude Code, Codex, OpenCode, Pi, AGY, Cursor);
  *  - `plannotator inbox --help` and the `plannotator` skill (everyone);
  *  - `/plannotator-inbox`'s Inbox briefing: the copies an agent reads itself
  *    (the Claude skill without the mod, the core skill for Codex, Kiro, Vibe

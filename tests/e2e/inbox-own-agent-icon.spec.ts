@@ -66,7 +66,7 @@ const AGENTS = [
   { key: 'tall', name: 'Codex', host: 'codex', subject: 'Release 0.28.62' },
   { key: 'spinner', name: 'Pi', host: 'pi', subject: 'Docs: Inbox guide' },
   { key: 'gif', name: 'OpenCode', host: 'opencode', subject: 'Scratch: CSV import' },
-  { key: 'hostile', name: 'Gemini CLI', host: 'gemini-cli', subject: 'Hostile picture' },
+  { key: 'hostile', name: 'AGY', host: 'gemini-cli', subject: 'Hostile picture' },
   { key: 'transparent', name: 'Claude Code', host: 'claude-code', subject: 'Agent icons brief' },
   { key: 'photo', name: 'Codex', host: 'codex', subject: 'Brand site hero' },
 ] as const;

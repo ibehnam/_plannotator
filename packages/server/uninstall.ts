@@ -542,7 +542,7 @@ export async function runPlannotatorUninstall(
     for (const [owner, filePath, allowRelocatedBinary] of [
       ["Claude Code", join(paths.claudeDir, "settings.json"), false],
       ["Codex", join(paths.codexDir, "hooks.json"), true],
-      ["Gemini CLI", join(environment.homeDir, ".gemini", "settings.json"), false],
+      ["AGY", join(environment.homeDir, ".gemini", "settings.json"), false],
       ["Mistral Vibe", join(paths.vibeDir, "hooks.toml"), false],
     ] as const) {
       const config = filePath.endsWith(".toml")
@@ -1727,7 +1727,7 @@ function cleanupGeminiSettings(
     manualCleanup: `Make ${filePath} a readable, writable strict JSON object. Remove only Plannotator command hooks from hooks.BeforeTool entries whose matcher is "exit_plan_mode", then save the file.`,
   };
   const parsed = readJsonRecord(
-    "Gemini CLI",
+    "AGY",
     filePath,
     "managed Gemini hooks",
     recovery,
@@ -1735,7 +1735,7 @@ function cleanupGeminiSettings(
     state,
   );
   if (!parsed) return;
-  if (request.dryRun) reportRemainingHookReferences("Gemini CLI", parsed, filePath, binaryPaths, platform, false, request, state,
+  if (request.dryRun) reportRemainingHookReferences("AGY", parsed, filePath, binaryPaths, platform, false, request, state,
     [{ event: "BeforeTool", matcher: "exit_plan_mode", suffix: "" }]);
   const wasInstallerTemplate = isGeminiInstallerTemplate(
     parsed,

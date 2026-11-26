@@ -77,7 +77,7 @@ const SESSIONLESS_HOSTS: readonly { variable: string; name: string; host?: strin
   { variable: "OMPCODE", name: "Oh My Pi", host: "pi" },
   { variable: "QWEN_CODE", name: "Qwen Code", host: "qwen" },
   { variable: "OPENCODE", name: "OpenCode", host: "opencode" },
-  { variable: "GEMINI_CLI", name: "Gemini CLI" },
+  { variable: "GEMINI_CLI", name: "AGY" },
   { variable: "COPILOT_CLI", name: "Copilot CLI" },
   { variable: "CURSOR_AGENT", name: "Cursor" },
   { variable: "DSH_SHELL", name: "DeepSeek Harness", host: "dsh" },

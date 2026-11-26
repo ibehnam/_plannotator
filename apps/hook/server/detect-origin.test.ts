@@ -40,7 +40,7 @@ describe("detectOrigin", () => {
     ["Codex", { CODEX_THREAD_ID: "t" }, "codex"],
     ["Copilot CLI", { COPILOT_CLI: "1" }, "copilot-cli"],
     ["OpenCode", { OPENCODE: "1" }, "opencode"],
-    ["Gemini CLI", { GEMINI_CLI: "1" }, "gemini-cli"],
+    ["AGY", { GEMINI_CLI: "1" }, "gemini-cli"],
     ["Qwen Code", { QWEN_CODE_SESSION_ID: "q1" }, "qwen-code"],
     ["Qwen Code's shell tool", { QWEN_CODE: "1" }, "qwen-code"],
     ["oh-my-pi", { OMPCODE: "1" }, "oh-my-pi"],

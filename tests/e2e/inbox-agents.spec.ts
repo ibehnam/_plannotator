@@ -2,19 +2,19 @@
  * The agents on this computer, proved in a real browser against the compiled
  * binary (the approved "inbox-agent-awareness" design, and
  * "inbox-agent-note-auto": the note is written by itself for the agents
- * proven to load it, Claude Code, Codex, Gemini CLI, Pi and OpenCode, and
+ * proven to load it, Claude Code, Codex, AGY, Pi and OpenCode, and
  * said once in a quiet line above the list; Qwen Code is still offered in
  * the one-time dialog, Cursor's note is still copied by hand). Fake agent
  * CLIs on a scratch PATH and a scratch HOME (tests/helpers/fake-agents.ts):
  * the real agent CLIs never run and the real home is never touched.
  *
  *  1. An agent starts the Inbox (`--background`): nothing is connected.
- *  2. The person runs `plannotator inbox`: it connects Codex and Gemini CLI,
+ *  2. The person runs `plannotator inbox`: it connects Codex and AGY,
  *     and the notes are written by then: Codex's AGENTS.md (its blank
  *     AGENTS.override.md is not what Codex reads), Gemini's GEMINI.md above
  *     its memory section, Claude Code's rules file. The window's first load
  *     shows the sound dialog (due) and, never a dialog, the line: "Connected
- *     Codex and Gemini CLI to the Inbox." and "Added the Inbox note to the
+ *     Codex and AGY to the Inbox." and "Added the Inbox note to the
  *     instructions of …", each file in its name's tooltip. It is said once:
  *     the next load is clear, and no note dialog ever asks about them.
  *  3. Codex's note goes off in Settings → Agents; a later run never writes it
@@ -143,7 +143,7 @@ test('plannotator inbox connects the agents found and writes their notes by itse
   writeFileSync(join(fake.home, '.codex', 'AGENTS.md'), '# My rules\n\nBe brief.\n');
   // A blank override: Codex skips it and reads AGENTS.md, so that is where the note goes.
   writeFileSync(join(fake.home, '.codex', 'AGENTS.override.md'), '  \n');
-  // Gemini CLI's memory section ("Save memory" appends under it): the note goes above it.
+  // AGY's memory section ("Save memory" appends under it): the note goes above it.
   mkdirSync(join(fake.home, '.gemini'), { recursive: true });
   writeFileSync(join(fake.home, '.gemini', 'GEMINI.md'), '# Mine\n\n## Gemini Added Memories\n- Likes short answers.\n');
   // Plannotator's Claude Code plugin: Claude Code loads the rules file, so it gets the note like the others.
@@ -168,7 +168,7 @@ test('plannotator inbox connects the agents found and writes their notes by itse
 
     const person = run(['--no-open']);
     expect(person.status, person.stderr).toBe(0);
-    expect(person.stderr).toContain('Connected Codex and Gemini CLI to the Inbox');
+    expect(person.stderr).toContain('Connected Codex and AGY to the Inbox');
     expect(adds().sort()).toEqual(['codex', 'gemini']);
     // The run answers when its notes are written: nobody was asked.
     expect(readFileSync(codexRules, 'utf8').startsWith(`# My rules\n\nBe brief.\n\n${INBOX_NOTE_START}\n`)).toBe(true);
@@ -192,11 +192,11 @@ test('plannotator inbox connects the agents found and writes their notes by itse
     const line = lineOf(page);
     await expect(line).toBeVisible({ timeout: 20_000 });
     await expect(lineRows(page)).toHaveCount(2);
-    await expect(lineRows(page).first()).toHaveText('Connected Codex and Gemini CLI to the Inbox.');
+    await expect(lineRows(page).first()).toHaveText('Connected Codex and AGY to the Inbox.');
     const notes = line.locator('[data-connect-notes]');
-    await expect(notes).toContainText('Added the Inbox note to the instructions of Claude Code, Codex and Gemini CLI');
+    await expect(notes).toContainText('Added the Inbox note to the instructions of Claude Code, Codex and AGY');
     const names = notes.locator('[data-note-agent]');
-    await expect(names).toHaveText(['Claude Code', 'Codex', 'Gemini CLI']);
+    await expect(names).toHaveText(['Claude Code', 'Codex', 'AGY']);
     expect(await names.evaluateAll((els) => els.map((el) => el.getAttribute('data-note-path')))).toEqual([
       '~/.claude/rules/plannotator-inbox.md',
       '~/.codex/AGENTS.md',
@@ -233,7 +233,7 @@ test('plannotator inbox connects the agents found and writes their notes by itse
     const codex = page.locator('[data-agent="codex"]');
     await expect(codex.getByRole('switch', { name: 'Reaches the Inbox: Codex' })).toHaveAttribute('aria-checked', 'true');
     await expect(codex.getByRole('switch', { name: 'Note in its instructions: Codex' })).toHaveAttribute('aria-checked', 'true');
-    await expect(page.locator('[data-agent="gemini"]').getByRole('switch', { name: 'Note in its instructions: Gemini CLI' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('[data-agent="gemini"]').getByRole('switch', { name: 'Note in its instructions: AGY' })).toHaveAttribute('aria-checked', 'true');
     await shot(page, 'connect-line-03-settings-agents');
 
     // The person turns Codex's note off (the route Settings → Agents uses): it goes, and stays gone.

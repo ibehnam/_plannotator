@@ -2385,7 +2385,7 @@ if ((-not $skipSkillsResolved) -and $invocableChoice -and ($invocableChoice -ne 
 # the plannotator_submit_plan tool; it no longer bundles skills.
 Update-PiExtensionIfPresent
 
-# --- Gemini CLI support (only if Gemini is installed) ---
+# --- Pre-rebrand Gemini CLI support (only if Gemini is installed) ---
 $geminiDir = "$env:USERPROFILE\.gemini"
 if ((Test-Path $geminiDir) -and $skipGeminiResolved) {
     # HONEST three-state reporting (#1178): detected-but-skipped is its own
@@ -2404,7 +2404,7 @@ if ((Test-Path $geminiDir) -and $skipGeminiResolved) {
     $geminiPoliciesDir = "$geminiDir\policies"
     New-Item -ItemType Directory -Force -Path $geminiPoliciesDir | Out-Null
     @'
-# Plannotator policy for Gemini CLI
+# Plannotator policy for the pre-rebrand Gemini CLI
 # Allows exit_plan_mode without TUI confirmation so the browser UI is the sole gate.
 [[rule]]
 toolName = "exit_plan_mode"
@@ -2418,7 +2418,7 @@ priority = 100
     if (Test-Path $geminiSettings) {
         $content = Get-Content -Path $geminiSettings -Raw -ErrorAction SilentlyContinue
         if ($content -notmatch '"plannotator"') {
-            # Merge hook into existing settings.json using node (ships with Gemini CLI)
+            # Merge hook into existing settings.json using node (ships with the pre-rebrand Gemini CLI)
             if (Get-Command node -ErrorAction SilentlyContinue) {
                 $mergeScript = @"
 const fs = require('fs');

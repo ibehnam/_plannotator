@@ -20,7 +20,7 @@ public enum Words {
   /// agent.codex: packages/core/inbox-types.ts INBOX_AGENT_LABELS codex
   public static let agentCodex = "Codex"
   /// agent.gemini: packages/core/inbox-types.ts INBOX_AGENT_LABELS gemini
-  public static let agentGemini = "Gemini CLI"
+  public static let agentGemini = "AGY"
   /// agent.qwen: packages/core/inbox-types.ts INBOX_AGENT_LABELS qwen
   public static let agentQwen = "Qwen Code"
   /// agent.cursor: packages/core/inbox-types.ts INBOX_AGENT_LABELS cursor

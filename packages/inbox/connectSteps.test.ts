@@ -89,7 +89,7 @@ test('Codex through MCP gets your replies back in the session by itself (Codex 0
   expect(stepText(plan.steps.find((row) => row.id === 'codex')!).text).toBe(
     "Adds the Inbox's MCP server to Codex. Codex 0.149 or later: your replies arrive as a new turn on their own.",
   );
-  expect(stepText(plan.steps.find((row) => row.id === 'gemini')!).text).toBe("Adds the Inbox's MCP server to Gemini CLI. Gemini CLI sees your replies when it checks the Inbox; it can't be woken.");
+  expect(stepText(plan.steps.find((row) => row.id === 'gemini')!).text).toBe("Adds the Inbox's MCP server to AGY. AGY sees your replies when it checks the Inbox; it can't be woken.");
 });
 
 test('an older Inbox without the plugin field: the tool means the plugin is installed', () => {
@@ -249,5 +249,5 @@ test('the wake line names the hosts a reply wakes, and what other agents do inst
 test('a Connect step for an MCP agent says it is not woken (Codex 0.149+ is: the Inbox queues the reply into its thread)', () => {
   const plan = connectPlan(agentsModel({ gemini: { detected: true, reach: { kind: 'mcp', on: false, state: 'not_connected', path: null, locked: false, reason: null } } }));
   expect(plan.next?.id).toBe('gemini');
-  expect(stepText(plan.next!).text).toBe("Adds the Inbox's MCP server to Gemini CLI. Gemini CLI sees your replies when it checks the Inbox; it can't be woken.");
+  expect(stepText(plan.next!).text).toBe("Adds the Inbox's MCP server to AGY. AGY sees your replies when it checks the Inbox; it can't be woken.");
 });

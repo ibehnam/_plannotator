@@ -54,7 +54,7 @@ On Windows, `stop` and `restart` can signal the Inbox only while it answers. If 
 
 ### Closed the tab?
 
-Type `/plannotator-inbox` in your agent (Claude Code, OpenCode, Pi, Gemini CLI, Kiro, Mistral Vibe, Droid; `$plannotator-inbox` in Codex; in Amp, **Plannotator: Open Inbox** in the command palette). It opens the Inbox in your browser, starting it if needed, and shows its address. You can also ask your agent where your Inbox is, or run `plannotator inbox --open` in a terminal. Over SSH it opens no browser on the remote machine: it shows the address and how to reach it (forward the port with `ssh -L`, or use `--tailscale`).
+Type `/plannotator-inbox` in your agent (Claude Code, OpenCode, Pi, AGY, Kiro, Mistral Vibe, Droid; `$plannotator-inbox` in Codex; in Amp, **Plannotator: Open Inbox** in the command palette). It opens the Inbox in your browser, starting it if needed, and shows its address. You can also ask your agent where your Inbox is, or run `plannotator inbox --open` in a terminal. Over SSH it opens no browser on the remote machine: it shows the address and how to reach it (forward the port with `ssh -L`, or use `--tailscale`).
 
 The command also briefs your agent on the Inbox for the rest of the session: send decisions you are not there for as questions, hand over finished long work with its files, and let your reply come back by itself where the agent's connection brings it (otherwise the agent checks for it when it needs the answer). It starts no new work and resumes none. Where Plannotator answers the command itself (Claude Code with the plugin, Pi, OpenCode with the plugin), you see only the address and the agent gets the briefing unseen, with no extra turn. Amp shows the address only.
 
@@ -63,7 +63,7 @@ The command also briefs your agent on the Inbox for the rest of the session: sen
 When you run `plannotator inbox` (not `--background`, which is how agents start it), it connects the agents it finds on this computer that are not connected yet, and says which on the terminal:
 
 ```
-Connected Codex, Gemini CLI and Cursor to the Inbox (Claude Code was already on).
+Connected Codex, AGY and Cursor to the Inbox (Claude Code was already on).
 Pi needs connecting by hand: Pi before 0.99 has no `pi mcp`; update Pi, or add plannotator-inbox to ~/.pi/agent/mcp.json by hand.
 Agents use it from their next session. PLANNOTATOR_INBOX_CONNECT=0 skips this step; plannotator uninstall removes what it added.
 ```
@@ -76,7 +76,7 @@ Agents use it from their next session. PLANNOTATOR_INBOX_CONNECT=0 skips this st
 | Hermes Agent | Plannotator's plugin is in `~/.hermes/plugins/plannotator` (or `$HERMES_HOME`) | the inbox tool turned on, and `hermes config set plugins.entries.plannotator.allow_gateway_injection true` so a reply can start a turn. Without the plugin, add it yourself: `hermes plugins install backnotprop/plannotator/apps/hermes-plugin --enable`. |
 | Pi without the extension | Pi 0.99 or later on your `PATH` (older Pi has no `pi mcp`: connect it by hand) | `pi mcp add plannotator-inbox` |
 | Codex | `codex` 0.35 or later on your `PATH` (older Codex has no `codex mcp add`, and a `~/.codex` or `$CODEX_HOME` folder without the CLI: connect it by hand) | `codex mcp add plannotator-inbox` (the Codex app and IDE extension share it) |
-| Gemini CLI | `gemini` 0.1.19 or later on your `PATH` (older has no `gemini mcp add`: connect it by hand; `$GEMINI_CLI_HOME` honored) | `gemini mcp add -s user plannotator-inbox` |
+| AGY | `gemini` 0.1.19 or later on your `PATH` (older has no `gemini mcp add`: connect it by hand; `$GEMINI_CLI_HOME` honored) | `gemini mcp add -s user plannotator-inbox` |
 | Qwen Code | `qwen` on your `PATH`, or a `~/.qwen` or `$QWEN_HOME` folder | one `plannotator-inbox` key in Qwen's `settings.json` |
 | Windsurf / Devin, Amp | `devin` or `amp` on your `PATH` | the agent's own `mcp add plannotator-inbox` |
 | Cursor, Kiro | `~/.cursor` exists or `cursor` / `cursor-agent` is on your `PATH`; `~/.kiro` exists or `kiro-cli` is on your `PATH` | one `plannotator-inbox` key in `~/.cursor/mcp.json` or `~/.kiro/settings/mcp.json` |
@@ -97,19 +97,19 @@ Each entry runs `<your plannotator binary> inbox mcp`. The agent uses it from it
 
 ### A note in each agent's instructions
 
-When the Inbox starts, and each time `plannotator inbox` connects an agent, Plannotator adds a short note about the Inbox to the instructions of each connected agent that is known to read that file (Claude Code, Codex, Gemini CLI, Pi and OpenCode), so agents send you decisions and finished work there while you are away. Each agent gets it once. One quiet line above the list says so, for example "Added the Inbox note to Claude Code's instructions." (hover the name for the file), together with the agents `plannotator inbox` just connected. Nothing asks you first. Turn a note off in Settings → Agents and it stays off; an agent you answered **Not now** for in an older version keeps that answer. Qwen Code is not added by itself: a one-time dialog offers its note, and Cursor's note is copied by hand. `PLANNOTATOR_INBOX_NOTES=0` turns all of this off. The files:
+When the Inbox starts, and each time `plannotator inbox` connects an agent, Plannotator adds a short note about the Inbox to the instructions of each connected agent that is known to read that file (Claude Code, Codex, AGY, Pi and OpenCode), so agents send you decisions and finished work there while you are away. Each agent gets it once. One quiet line above the list says so, for example "Added the Inbox note to Claude Code's instructions." (hover the name for the file), together with the agents `plannotator inbox` just connected. Nothing asks you first. Turn a note off in Settings → Agents and it stays off; an agent you answered **Not now** for in an older version keeps that answer. Qwen Code is not added by itself: a one-time dialog offers its note, and Cursor's note is copied by hand. `PLANNOTATOR_INBOX_NOTES=0` turns all of this off. The files:
 
 | Agent | File |
 |-------|------|
 | Claude Code | `~/.claude/rules/plannotator-inbox.md` (a file of its own) |
 | Codex | `~/.codex/AGENTS.override.md` when it has text in it (Codex skips an empty one), else `~/.codex/AGENTS.md` |
-| Gemini CLI | `~/.gemini/GEMINI.md` (or your `context.fileName`) |
+| AGY | `~/.gemini/GEMINI.md` (or your `context.fileName`) |
 | Qwen Code | `~/.qwen/QWEN.md` (or your `context.fileName`; in `$QWEN_HOME` when set) |
 | Pi | the one instructions file Pi reads in `~/.pi/agent/` |
 | OpenCode | `~/.config/opencode/AGENTS.md`, only when you already have it: creating it would stop OpenCode 1 reading your `~/.claude/CLAUDE.md` |
 | Cursor | Customize → Rules in the Cursor app (you copy it by hand; Cursor has no global rules file) |
 
-Managed notes sit between two marker lines at the end of the file, or just above Gemini CLI's or Qwen Code's "Added Memories" section, so a fact those agents remember never lands inside the note. Plannotator never overwrites a note you edited, and removing it removes only that section. `plannotator inbox --notes codex,gemini` adds managed notes from the terminal (the agent install prompt runs this only after you say yes). For Cursor, nothing is written: Settings (and the one-time dialog) show the note (without the marker lines) to copy into Customize → Rules in Cursor, and `plannotator inbox --notes cursor` prints it. Plannotator cannot see whether it was pasted, update it or remove it; a copied Cursor rule is never shown as added. `plannotator inbox --help` lists exact files and manual steps.
+Managed notes sit between two marker lines at the end of the file, or just above the pre-rebrand Gemini CLI's or Qwen Code's "Added Memories" section, so a fact those agents remember never lands inside the note. Plannotator never overwrites a note you edited, and removing it removes only that section. `plannotator inbox --notes codex,gemini` adds managed notes from the terminal (the agent install prompt runs this only after you say yes). For Cursor, nothing is written: Settings (and the one-time dialog) show the note (without the marker lines) to copy into Customize → Rules in Cursor, and `plannotator inbox --notes cursor` prints it. Plannotator cannot see whether it was pasted, update it or remove it; a copied Cursor rule is never shown as added. `plannotator inbox --help` lists exact files and manual steps.
 
 ### Settings → Agents
 
@@ -341,7 +341,7 @@ claude mcp add --scope user plannotator-inbox -- plannotator inbox mcp
 codex mcp add plannotator-inbox -- plannotator inbox mcp
 ```
 
-The Inbox's first-run screen and **Settings** give the exact command or install link for each client, with the absolute path of your `plannotator` binary filled in. The list covers Claude Code, the Claude app, Codex, Cursor, VS Code, Windsurf / Devin, Gemini CLI, Qwen Code, Goose, Amp, Cline, Pi, OpenCode, Zed, Kiro, Muse Code, JetBrains, and any other MCP client. Apps started from the Dock may not see your shell's `PATH`, which is why the commands use the full path.
+The Inbox's first-run screen and **Settings** give the exact command or install link for each client, with the absolute path of your `plannotator` binary filled in. The list covers Claude Code, the Claude app, Codex, Cursor, VS Code, Windsurf / Devin, AGY, Qwen Code, Goose, Amp, Cline, Pi, OpenCode, Zed, Kiro, Muse Code, JetBrains, and any other MCP client. Apps started from the Dock may not see your shell's `PATH`, which is why the commands use the full path.
 
 **Codex** needs no plugin: with Codex 0.149 or later, connected through `plannotator inbox mcp`, your reply arrives in the Codex thread that asked as a new turn by itself (in the TUI, the Codex app and the IDE extension; a one-shot `codex exec` run is not woken: your reply stays in the Inbox, and a later run can read it). The Inbox puts it there with `codex queue`: an idle thread starts the turn within about a second, a busy one gets it when its current turn ends (never in the middle of one), and a thread whose Codex is closed gets it when you resume it. The Inbox finds `codex` on its `PATH`, else the ChatGPT or Codex app's own Codex. While it queues, your reply is an argument of the `codex queue` command, so for that moment it shows in the process list. The line under your reply says "Queued for Codex; it gets this as its next turn." until the thread's next turn uses the Inbox; there is no **Send now** for Codex. If Codex does not know the thread (it was deleted, or Codex uses another `CODEX_HOME` than the Inbox), the reply is saved for the next agent, as for a session that has ended. If handing it to Codex took too long (30 seconds), the Inbox does not try again, so it never arrives twice, and the line says the reply is saved for the agent's next read. If the Inbox finds no `codex` at all, the reply waits, and goes the next time something happens in the Inbox once a Codex is there.
 

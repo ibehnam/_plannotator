@@ -47,7 +47,7 @@ function row(id: InboxAgentRow['id'], label: string, note: Partial<NonNullable<I
 }
 
 const CODEX = row('codex', 'Codex', { path: '~/.codex/AGENTS.md' });
-const GEMINI = row('gemini', 'Gemini CLI', { path: '~/.gemini/GEMINI.md', create: true });
+const GEMINI = row('gemini', 'AGY', { path: '~/.gemini/GEMINI.md', create: true });
 const CLAUDE = row('claude-code', 'Claude Code', { path: '~/.claude/rules/plannotator-inbox.md', create: true }, 'tool');
 const PI = row('pi', 'Pi', { path: '~/.pi/agent/AGENTS.md' }, 'tool');
 const OPENCODE = row('opencode', 'OpenCode', { path: '~/.config/opencode/AGENTS.md' }, 'tool');
@@ -109,10 +109,10 @@ test.skipIf(!hasDom)('several agents: no band (the line above the list says the 
   expect(title(el)).toBe('Tell your agents about the Inbox');
   expect(rowsOf(el)).toEqual([
     { name: 'Codex', path: '~/.codex/AGENTS.md', state: 'Adds to end', ticked: true },
-    { name: 'Gemini CLI', path: '~/.gemini/GEMINI.md', state: 'New file', ticked: true },
+    { name: 'AGY', path: '~/.gemini/GEMINI.md', state: 'New file', ticked: true },
     { name: 'Claude Code', path: '~/.claude/rules/plannotator-inbox.md', state: 'New file', ticked: true },
   ]);
-  expect(primary(el).textContent).toBe('Add to Codex, Gemini CLI and Claude Code');
+  expect(primary(el).textContent).toBe('Add to Codex, AGY and Claude Code');
   expect(document.activeElement).toBe(primary(el));
   // Each checkbox is named by its whole row (name, path, pill), so the path is read once: no second description.
   const box = el.querySelector('.ib-anote-table input') as HTMLInputElement;
@@ -126,7 +126,7 @@ test.skipIf(!hasDom)('unticking renames the primary; with nothing ticked it is "
   const { el, seen } = mount([CODEX, GEMINI, CLAUDE]);
   const boxes = () => [...el.querySelectorAll('.ib-anote-table input')] as HTMLInputElement[];
   act(() => boxes()[2]!.click());
-  expect(primary(el).textContent).toBe('Add to Codex and Gemini CLI');
+  expect(primary(el).textContent).toBe('Add to Codex and AGY');
   expect(el.querySelectorAll('.ib-anote-unpicked')).toHaveLength(1);
   act(() => boxes()[0]!.click());
   act(() => boxes()[1]!.click());
@@ -175,19 +175,19 @@ test.skipIf(!hasDom)('Add: only the ticked notes are sent; results in the same r
   expect(title(el)).toBe('Added the note to Codex');
   expect(rowsOf(el)).toEqual([
     { name: 'Codex', path: '~/.codex/AGENTS.md', state: 'Added', ticked: null },
-    { name: 'Gemini CLI', path: '~/.gemini/GEMINI.md', state: 'Not added', ticked: null },
+    { name: 'AGY', path: '~/.gemini/GEMINI.md', state: 'Not added', ticked: null },
   ]);
   expect(el.querySelector('.ib-anote-err')?.textContent).toBe("~/.gemini/GEMINI.md can't be written: permission denied. Try again");
   // The results view: focus on Done, the live region says what was written.
   expect(document.activeElement).toBe(button(el, 'Done'));
   expect(el.querySelector('.ib-anote-doneline')?.textContent).toBe('Each agent reads it from its next session. Fix the file, then try again here or in Settings → Agents.');
-  expect(el.querySelector('[aria-live="polite"]')?.textContent).toBe("Added the note to Codex. Couldn't add the note to Gemini CLI.");
+  expect(el.querySelector('[aria-live="polite"]')?.textContent).toBe("Added the note to Codex. Couldn't add the note to AGY.");
 
   act(() => button(el, 'Try again').click());
   await flush();
   expect(calls[1]).toEqual({ path: '/api/inbox/agents/notes', body: { add: ['gemini'], asked: ['gemini'], seen: false } });
   expect(rowsOf(el).map((r) => r.state)).toEqual(['Added', 'Created']);
-  expect(title(el)).toBe('Added the note to Codex and Gemini CLI');
+  expect(title(el)).toBe('Added the note to Codex and AGY');
   expect(el.querySelector('.ib-anote-err')).toBeNull();
   expect(document.activeElement).toBe(button(el, 'Done'));
 

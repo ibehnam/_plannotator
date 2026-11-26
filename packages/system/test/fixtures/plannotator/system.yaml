@@ -30,7 +30,7 @@ parts:
   agents:
     name: Coding agents
     kind: agents
-    role: Claude Code, Codex, OpenCode, Pi, Gemini CLI, Copilot CLI, Qwen Code and more, on your computer.
+    role: Claude Code, Codex, OpenCode, Pi, AGY, Copilot CLI, Qwen Code and more, on your computer.
     marks: [ claude, codex ]
     code:
       apps/hook/hooks/hooks.json: Claude Code hooks
@@ -185,7 +185,7 @@ parts:
     in: local
     name: Other plan hooks
     kind: hooks
-    role: Gemini CLI, Copilot CLI, Qwen Code, Mistral Vibe and DeepSeek Harness run plannotator on their exit-plan step.
+    role: The pre-rebrand Gemini CLI, Copilot CLI, Qwen Code, Mistral Vibe and DeepSeek Harness run plannotator on their exit-plan step.
     code:
       apps/gemini/hooks/settings-snippet.json: BeforeTool on exit_plan_mode
       apps/copilot/hooks.json: preToolUse
@@ -358,7 +358,7 @@ parts:
     in: inbox
     name: MCP-only agents
     kind: agents
-    role: Gemini CLI, Cursor, Windsurf, Amp, Kiro, the Claude app and Cline without its plugin call the Inbox's tools; they read replies when they next look.
+    role: AGY, Cursor, Windsurf, Amp, Kiro, the Claude app and Cline without its plugin call the Inbox's tools; they read replies when they next look.
     marks: [ cursor ]
     code:
       packages/server/inbox-agents.ts: the agents it connects

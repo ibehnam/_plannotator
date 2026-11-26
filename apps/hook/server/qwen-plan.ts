@@ -7,7 +7,7 @@
  * `tool_input.plan`), `session_id`, `transcript_path`, `cwd`.
  *
  * The pair (PermissionRequest, exit_plan_mode) is Qwen's alone: Claude Code
- * names the tool `ExitPlanMode`, Gemini CLI sends `BeforeTool`, Mistral Vibe
+ * names the tool `ExitPlanMode`, the pre-rebrand Gemini CLI sends `BeforeTool`, Mistral Vibe
  * sends `pre_tool`. So the hook needs no environment variable to know it runs
  * under Qwen. (The NonoElRobot fork detected Qwen through `QWEN_CODE`, which
  * Qwen sets only for its shell tool, not for hooks.)

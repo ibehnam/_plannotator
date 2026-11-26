@@ -39,7 +39,7 @@ export function notesAskedOf(model: InboxAgentsModel): readonly InboxNoteAgentId
  * asked once) whose note is not written by itself (the Inbox writes it for
  * the agents proven to load it, INBOX_NOTE_AUTO_AGENT_IDS; Qwen Code and
  * Cursor are still asked), Claude Code last as in the approved dialog ("Add
- * to Codex, Gemini CLI and Claude Code"). None with PLANNOTATOR_INBOX_NOTES=0.
+ * to Codex, AGY and Claude Code"). None with PLANNOTATOR_INBOX_NOTES=0.
  */
 export function noteQuestionRows(model: InboxAgentsModel): InboxAgentRow[] {
   if (model.notes_env_off) return [];
@@ -155,7 +155,7 @@ export function sentence(text: string): string {
   return /[.!?]$/.test(text) ? text : `${text}.`;
 }
 
-/** "Codex", "Codex and Gemini CLI", "Codex, Gemini CLI and Claude Code". */
+/** "Codex", "Codex and AGY", "Codex, AGY and Claude Code". */
 export function joinNames(names: readonly string[]): string {
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;

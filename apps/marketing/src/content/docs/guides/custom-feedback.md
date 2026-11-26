@@ -85,7 +85,7 @@ If you use a `{{variable}}` that doesn't exist for that message type, it stays i
 
 ## Runtime-specific overrides
 
-Different agent runtimes (Claude Code, OpenCode, Pi, Gemini CLI, etc.) sometimes need different messages. For example, OpenCode's plan approval is shorter because the agent already knows it has tool access.
+Different agent runtimes (Claude Code, OpenCode, Pi, AGY, etc.) sometimes need different messages. For example, OpenCode's plan approval is shorter because the agent already knows it has tool access.
 
 You can override a message for a specific runtime using the `runtimes` key:
 

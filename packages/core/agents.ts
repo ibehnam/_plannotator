@@ -25,7 +25,7 @@ export const AGENT_CONFIG = {
   'copilot-cli': { name: 'GitHub Copilot', badge: 'bg-blue-500/15 text-blue-400' },
   'pi':          { name: 'Pi',          badge: 'bg-violet-500/15 text-violet-400', aiProviderTypes: ['pi-sdk'] },
   'codex':       { name: 'Codex',       badge: 'bg-purple-500/15 text-purple-400', aiProviderTypes: ['codex-sdk'] },
-  'gemini-cli':  { name: 'Gemini CLI', badge: 'bg-sky-500/15 text-sky-400' },
+  'gemini-cli':  { name: 'AGY', badge: 'bg-sky-500/15 text-sky-400' },
   'oh-my-pi':    { name: 'Oh My Pi',    badge: 'bg-fuchsia-500/15 text-fuchsia-400' },
   'mistral-vibe': { name: 'Mistral Vibe', badge: 'bg-rose-500/15 text-rose-400' },
   'qwen-code':   { name: 'Qwen Code',   badge: 'bg-indigo-500/15 text-indigo-400', aiProviderTypes: ['qwen-sdk'] },

@@ -132,13 +132,13 @@ describe("where each agent's note goes", () => {
   });
 });
 
-describe("above a Gemini CLI or Qwen Code memory section", () => {
+describe("above a pre-rebrand Gemini CLI or Qwen Code memory section", () => {
   // Their memory tools add a remembered fact at the end of `## Gemini Added Memories` / `## Qwen Added
   // Memories`, which runs to the next `\n## `: after that section, the note's own heading would be that
   // next heading, and the fact would land inside the note's markers.
   const MEMORIES = "## Gemini Added Memories\n- likes tabs\n";
 
-  /** What Gemini CLI 0.43.0's save_memory writes (computeGlobalMemoryContent, its global scope). */
+  /** What the pre-rebrand Gemini CLI 0.43.0's save_memory writes (computeGlobalMemoryContent, its global scope). */
   function geminiRemembers(text: string, fact: string): string {
     const header = "## Gemini Added Memories";
     const at = text.indexOf(header);
@@ -526,7 +526,7 @@ test("uninstall: every recorded note, plus a file with our markers whose record 
   const { items } = planInboxNoteRemoval(dataDir, e, INBOX_AGENT_LABELS);
   expect(items.map((item) => item.describe)).toEqual([
     "Note for Codex (~/.codex/AGENTS.md, marked section only)",
-    "Note for Gemini CLI (~/.gemini/GEMINI.md, created by Plannotator: file removed if empty)",
+    "Note for AGY (~/.gemini/GEMINI.md, created by Plannotator: file removed if empty)",
     "Note for Qwen Code (~/.qwen/QWEN.md, marked section only)",
     "Note for Pi (~/.pi/agent/CLAUDE.md, marked section only)",
   ]);

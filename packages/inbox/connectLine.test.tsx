@@ -81,8 +81,8 @@ test.skipIf(!hasDom)('the run\'s news and several notes: connected first, then t
     return copy.textContent;
   });
   expect(visible).toEqual([
-    'Connected Codex and Gemini CLI to the Inbox.',
-    'Added the Inbox note to the instructions of Codex, Gemini CLI and Claude Code.',
+    'Connected Codex and AGY to the Inbox.',
+    'Added the Inbox note to the instructions of Codex, AGY and Claude Code.',
     'Pi needs connecting yourself: Settings → Agents',
   ]);
   expect(await tooltipOf(el.querySelector('[data-note-agent="gemini"]')!)).toBe('~/.gemini/GEMINI.md');
@@ -119,7 +119,7 @@ test.skipIf(!hasDom)('a failure and a foreign entry; "new on this computer" afte
   expect(lines(el)).toEqual([
     'Connected Codex to the Inbox (new on this computer).',
     "Couldn't connect Amp: amp mcp add exited with code 3. Settings → Agents",
-    "Couldn't connect Gemini CLI: gemini mcp add exited with code 3: boom: gemini could not write its config (permission denied). Settings → Agents",
+    "Couldn't connect AGY: gemini mcp add exited with code 3: boom: gemini could not write its config (permission denied). Settings → Agents",
     'Cursor has its own plannotator-inbox entry in ~/.cursor/mcp.json; Plannotator left it alone.',
   ]);
 });

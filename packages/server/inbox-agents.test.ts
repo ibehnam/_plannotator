@@ -648,7 +648,7 @@ describe("a CLI is asked what it is before it is handed an mcp add", () => {
     expect(formatConnectReport(again)).toEqual([]);
   });
 
-  test("Codex CLI before 0.35 and Gemini CLI before 0.1.19 (no `mcp add` yet) are left to the person, with why", async () => {
+  test("Codex CLI before 0.35 and the pre-rebrand Gemini CLI before 0.1.19 (no `mcp add` yet) are left to the person, with why", async () => {
     fake.install("codex", "gemini");
     mkdirSync(join(fake.home, ".gemini"), { recursive: true });
     const report = await connect({ FAKE_CODEX_VERSION: "codex-cli 0.34.0", FAKE_GEMINI_VERSION: "0.1.18" });
@@ -656,7 +656,7 @@ describe("a CLI is asked what it is before it is handed an mcp add", () => {
     expect(fake.calls()).toEqual([]);
     const lines = formatConnectReport(report);
     expect(lines).toContain("Codex needs connecting by hand: Codex CLI before 0.35 has no `codex mcp add`; update Codex, or add plannotator-inbox to its config.toml by hand.");
-    expect(lines).toContain("Gemini CLI needs connecting by hand: Gemini CLI before 0.1.19 has no `gemini mcp add`; update Gemini CLI, or add plannotator-inbox to its settings.json by hand.");
+    expect(lines).toContain("AGY needs connecting by hand: The pre-rebrand Gemini CLI before 0.1.19 has no `gemini mcp add`; update it, or add plannotator-inbox to its settings.json by hand.");
     // The first builds that have it are connected.
     const later = await connect({ FAKE_CODEX_VERSION: "codex-cli 0.35.0", FAKE_GEMINI_VERSION: "0.1.19" });
     expect(later.added.sort()).toEqual(["codex", "gemini"]);

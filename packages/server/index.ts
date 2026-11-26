@@ -165,7 +165,7 @@ export interface ServerOptions {
    * "Approve with notes" / "Approve with a note…" rows and words the Approve
    * warning. Set per host, never from the origin's name: the Claude Code mod
    * (`claude-mod-plan`), OpenCode and Pi deliver them; the classic Claude
-   * Code hook, Gemini CLI, Codex, Copilot CLI and Mistral Vibe drop them.
+   * Code hook, the pre-rebrand Gemini CLI's hook, Codex, Copilot CLI and Mistral Vibe drop them.
    * Default false, so an unknown host is never offered a row that loses text.
    */
   approvalNotesSupported?: boolean;

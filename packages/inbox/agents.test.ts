@@ -1,6 +1,6 @@
 /**
  * Who the agent-note dialog asks about (agents.ts): each agent once, never an
- * agent whose note is written by itself (Claude Code, Codex, Gemini CLI, Pi,
+ * agent whose note is written by itself (Claude Code, Codex, AGY, Pi,
  * OpenCode: approval "inbox-agent-note-auto"; Qwen Code and Cursor are still
  * asked), nobody with
  * PLANNOTATOR_INBOX_NOTES=0, and an Inbox of 0.28.18 or older (no
@@ -48,7 +48,7 @@ function model(over: Partial<InboxAgentsModel> = {}): InboxAgentsModel {
 const ids = (m: InboxAgentsModel) => noteQuestionRows(m).map((r) => r.id);
 
 test('every candidate not asked yet whose note is not written by itself; not reaching, no file, or failed this run: not a candidate', () => {
-  // Claude Code, Codex and Gemini CLI are candidates too, but their notes are written by themselves.
+  // Claude Code, Codex and AGY are candidates too, but their notes are written by themselves.
   expect(ids(model())).toEqual(['qwen', 'cursor']);
   const failed = model({ last_report: { at: '', first: true, added: [], already: [], failed: [{ agent: 'qwen', reason: 'x', path: null }], foreign: [], manual: [], unfinished: [], claude_code: false } });
   expect(ids(failed)).toEqual(['cursor']);
@@ -110,7 +110,7 @@ test('an agent connected in another QWEN_HOME is news for the band: where it is,
 
 test('the primary: up to three names, then a count; nothing ticked closes without adding', () => {
   expect(primaryAction(['Codex'])).toEqual({ label: 'Add to Codex', add: true });
-  expect(primaryAction(['Codex', 'Gemini CLI', 'Claude Code'])).toEqual({ label: 'Add to Codex, Gemini CLI and Claude Code', add: true });
+  expect(primaryAction(['Codex', 'AGY', 'Claude Code'])).toEqual({ label: 'Add to Codex, AGY and Claude Code', add: true });
   expect(primaryAction(['a', 'b', 'c', 'd']).label).toBe('Add to 4 agents');
   expect(primaryAction([])).toEqual({ label: "Don't add a note", add: false });
 });
