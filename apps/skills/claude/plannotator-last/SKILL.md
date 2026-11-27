@@ -7,6 +7,8 @@ disable-model-invocation: true
 
 # Plannotator Last
 
+In agy, `plannotator last` cannot read your session. Run `~/.config/tmux/modules/annotate/plugin.sh annotate-last` with run_command's NotificationTimeoutSeconds 1800 and WaitMsBeforeAsync 10000, then end your turn. AGY moves it to the background. Its output, the person's feedback, arrives when they submit. Do not poll it or run it again.
+
 ## Message annotations
 
 !`plannotator annotate-last $ARGUMENTS`
