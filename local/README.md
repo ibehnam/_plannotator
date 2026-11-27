@@ -88,6 +88,23 @@
     upstream does, and with no gate nothing runs. A host's own plan card never asks it. Its suites also keep the one
     upstream behaviour it needs: with plan review off, the mod passes `ExitPlanMode` on.
 36. That, described in the agent guides (`environment.md`, its own commit, as 5).
+37. **The display name is AGY** (`INBOX_AGENT_LABELS`, `packages/core/agents.ts`, `GuideViewer`, `harnesses.ts`, the
+    server, inbox, install-script, marketing and agent-guide text, the README, and the tests that assert it): Google
+    renamed Gemini CLI to AGY, so every label and line of prose that said "Gemini CLI" says "AGY". The origin id
+    `gemini-cli`, the `gemini` command, `apps/gemini`, `~/.gemini` and the env var names stay. Text that explains the
+    old integration's mechanics (the `BeforeTool` hook, `exit_plan_mode`, the policy file, the memory section, the
+    version bounds) says "the pre-rebrand Gemini CLI's", because AGY has none of them. The mobile contract's
+    `Words.swift` and `words.json` follow the labels (`bun scripts/mobile/words.ts`, checked by `--check` and
+    `scripts/mobile/check.ts`); `feedbackSearch.data.json` keeps its two GitHub titles.
+38. **The `plannotator-last` skill names AGY's way** (`apps/skills/claude/plannotator-last/SKILL.md`; doc-only): one
+    paragraph above its command: in agy, `plannotator last` cannot read the session; the agent runs the tmux annotate
+    plugin's `annotate-last` through `run_command` (`NotificationTimeoutSeconds` 1800, `WaitMsBeforeAsync` 10000), ends
+    its turn, and AGY backgrounds the command and hands its output over when the person submits.
+39. **AGY is detected by its own markers** (`apps/hook/server/detect-origin.ts`): AGY 1.5.18 sets no `GEMINI_CLI`; in the
+    commands it runs it sets `ANTIGRAVITY_AGENT=1` and `ANTIGRAVITY_CONVERSATION_ID`, and a hook process gets only the
+    second. Either one, or `GEMINI_CLI` (the pre-rebrand Gemini CLI's), gives `gemini-cli`, in the chain's old place;
+    `PLANNOTATOR_ORIGIN` still wins, and no marker is `claude-code` as before.
+40. That, described in the agent guides (`environment.md`, its own commit, as 5).
 
 `main` mirrors `upstream/main` and is never committed to.
 
@@ -129,8 +146,21 @@ files and the DOM list as the patch left them, its own suites run. Every suite b
 | 32 (secondary) | `2ba5b4036` | without | `themeContrast` |
 | 33 | `58015139f` | without | `useDocumentHistory`, `HtmlViewer.frameScale`, `HtmlViewer.pagePlace`, `bridgePagePlace` |
 | 35 | `5d2c81a43` | without | `apps/hook/server/plan-review-gate` |
+| 37 | `a6328fd00` | without | `connectLine`, `connectSteps`, `agentNoteDialog`, `inbox-agents`, `inbox-agents-settings`, `inbox-agent-notes`, `uninstall`, `inbox-connect-cli`, `inbox-help` |
+| 39 | `26b527e88` | without | `detect-origin` |
 
 `apps/hook/hooks/mod/plan-review-gate` passes without 35 by design: it guards upstream's mod, not the patch.
+Patches 37 and 39 were checked on 2026-11-26 (`mine` at `0edc5ab5f`, on the build host, in a scratch tree, after the
+build's bundles: the CLI suites run the built page). The 15 unit-test files patch 37 changed, the system fixture's suite
+and the 37 suites that `suites` held before, 53 in all, gave 1326 pass, 0 fail, 2 skip as `mine` is. Without 37 (its
+two doc and comment edits that 39 and 40 touch left in): 1311 pass, 15 fail, 2 skip. 13 are in the nine suites of
+its row: `connectLine` 2, `connectSteps` 2, `agentNoteDialog` 1, `inbox-agents` 1, `inbox-agents-settings` 2,
+`inbox-agent-notes` 1, `uninstall` 1, `inbox-connect-cli` 2, `inbox-help` 1. The other two, `inbox-agents`' "a grandchild
+holding the CLI's output open does not hold the run" and `uninstall`'s "uninstall stops its running workers", pass with
+37 and passed without it in an earlier run of this audit (13 fail then): cause not identified. The six other suites 37
+changed (`limits`, `agents`, `plan-approval-notes` in the server and in Pi, `inbox-guidance-parity`, the system fixture's)
+pass without it: their changes are test names, comments and labels the test passes in, so they guard nothing and are
+not in `suites`. Without 39: 1319 pass, 7 fail, all in `detect-origin` (the AGY markers, the override, the chain's order).
 A replay changes the commit names; check each new code patch the same way before it is listed.
 On 2026-11-25 patches 27 and 35 gained `windowsHide: true` on their spawns (`close-tab.ts`,
 `plan-review-gate.ts`), which upstream's `tests/windows-hide-guard.test.ts` asks of every spawn; that
@@ -153,7 +183,7 @@ route; that suite, `tests/parity/vendor-parity.test.ts` and the route's own Pi s
   releases came after it.
 - `plannotator-rebuild --replay` (or `--to TAG`): replays `mine` onto the newest release, syncs the
   tree with its Git data to the build host's `~/.cache/plannotator-build/src`, builds it with
-  upstream's CI recipe, runs `bun run typecheck`, the Pi extension's vendor step and thirty-seven
+  upstream's CI recipe, runs `bun run typecheck`, the Pi extension's vendor step and forty-seven
   suites in upstream's test sandbox, each test allowed 30 s, since the build host scans each new
   executable at its first exec. `--full` runs upstream's whole unit suite on `mine` and on the
   release's own checkout instead, and stops only on a test that fails on `mine` and passes on the

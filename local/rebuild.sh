@@ -79,6 +79,16 @@ suites=(
   tests/parity/route-parity.test.ts
   tests/parity/vendor-parity.test.ts
   apps/pi-extension/server/close-tab-route.test.ts
+  packages/inbox/connectLine.test.tsx
+  packages/inbox/connectSteps.test.ts
+  packages/inbox/agentNoteDialog.test.tsx
+  packages/server/inbox-agents.test.ts
+  packages/server/inbox-agents-settings.test.ts
+  packages/server/inbox-agent-notes.test.ts
+  packages/server/uninstall.test.ts
+  apps/hook/server/inbox-connect-cli.test.ts
+  apps/hook/server/inbox-help.test.ts
+  apps/hook/server/detect-origin.test.ts
 )
 # Files upstream's sandbox refuses to run (scripts/test-sandbox.ts REFUSED).
 refused=(apps/pi-extension/inbox.test.ts tests/never-touch-the-real-inbox.test.ts)
