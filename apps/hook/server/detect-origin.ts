@@ -10,7 +10,10 @@ import { inboxHostSessionFromEnv } from "./inbox-mcp-shim";
  *   > Codex (CODEX_THREAD_ID)
  *   > Copilot CLI (COPILOT_CLI)
  *   > OpenCode (OPENCODE)
- *   > AGY (GEMINI_CLI)
+ *   > AGY (ANTIGRAVITY_AGENT or ANTIGRAVITY_CONVERSATION_ID). AGY 1.5.18 sets no
+ *     GEMINI_CLI: in the commands it runs it sets ANTIGRAVITY_AGENT=1 and
+ *     ANTIGRAVITY_CONVERSATION_ID, and a hook process gets only the second.
+ *     GEMINI_CLI is the pre-rebrand Gemini CLI's marker, still read for it.
  *   > Qwen Code (QWEN_CODE_SESSION_ID, which Qwen sets for its hooks and its
  *     shell tool; QWEN_CODE=1 is set for the shell tool only). The plan hook
  *     also knows Qwen from its payload (PermissionRequest + exit_plan_mode),
@@ -49,7 +52,7 @@ export function detectOrigin(env: Record<string, string | undefined>): Origin {
     env.CODEX_THREAD_ID ? "codex" :
     env.COPILOT_CLI ? "copilot-cli" :
     env.OPENCODE ? "opencode" :
-    env.GEMINI_CLI ? "gemini-cli" :
+    (env.GEMINI_CLI || env.ANTIGRAVITY_AGENT || env.ANTIGRAVITY_CONVERSATION_ID) ? "gemini-cli" :
     (env.QWEN_CODE_SESSION_ID || env.QWEN_CODE === "1") ? "qwen-code" :
     env.OMPCODE ? "oh-my-pi" :
     env.DSH_SHELL && !hasNonDshAgentMarker(env) ? "dsh" :

@@ -40,7 +40,9 @@ describe("detectOrigin", () => {
     ["Codex", { CODEX_THREAD_ID: "t" }, "codex"],
     ["Copilot CLI", { COPILOT_CLI: "1" }, "copilot-cli"],
     ["OpenCode", { OPENCODE: "1" }, "opencode"],
-    ["AGY", { GEMINI_CLI: "1" }, "gemini-cli"],
+    ["the pre-rebrand Gemini CLI", { GEMINI_CLI: "1" }, "gemini-cli"],
+    ["AGY's commands", { ANTIGRAVITY_AGENT: "1", ANTIGRAVITY_CONVERSATION_ID: "c1" }, "gemini-cli"],
+    ["AGY's hook process", { ANTIGRAVITY_CONVERSATION_ID: "c1" }, "gemini-cli"],
     ["Qwen Code", { QWEN_CODE_SESSION_ID: "q1" }, "qwen-code"],
     ["Qwen Code's shell tool", { QWEN_CODE: "1" }, "qwen-code"],
     ["oh-my-pi", { OMPCODE: "1" }, "oh-my-pi"],
@@ -73,5 +75,42 @@ describe("detectOrigin", () => {
 
   test("no fingerprint is claude-code", () => {
     expect(detectOrigin({})).toBe("claude-code");
+  });
+});
+
+describe("detectOrigin: AGY", () => {
+  // Catches: AGY 1.5.18 sets no GEMINI_CLI, so a `plannotator` run from it read as claude-code (the review
+  // labelled Claude Code, `last` reading a Claude transcript). In the commands it runs it sets
+  // ANTIGRAVITY_AGENT=1 and ANTIGRAVITY_CONVERSATION_ID; a hook process gets only ANTIGRAVITY_CONVERSATION_ID.
+  test.each([
+    ["ANTIGRAVITY_AGENT, set in the commands AGY runs", { ANTIGRAVITY_AGENT: "1" }],
+    ["ANTIGRAVITY_CONVERSATION_ID, the one marker a hook process gets", { ANTIGRAVITY_CONVERSATION_ID: "c1" }],
+    ["both, as in a command AGY runs", { ANTIGRAVITY_AGENT: "1", ANTIGRAVITY_CONVERSATION_ID: "c1" }],
+    ["GEMINI_CLI, the pre-rebrand Gemini CLI's own", { GEMINI_CLI: "1" }],
+  ] as const)("%s alone is gemini-cli", (_name, env) => {
+    expect(detectOrigin(env)).toBe("gemini-cli");
+  });
+
+  // Catches: the new markers outranking the explicit override.
+  test("PLANNOTATOR_ORIGIN still wins over AGY's markers", () => {
+    expect(detectOrigin({ ANTIGRAVITY_AGENT: "1", ANTIGRAVITY_CONVERSATION_ID: "c1", PLANNOTATOR_ORIGIN: "codex" })).toBe("codex");
+    expect(detectOrigin({ ANTIGRAVITY_CONVERSATION_ID: "c1", PLANNOTATOR_ORIGIN: "nope" })).toBe("gemini-cli");
+  });
+
+  // Catches: a blank marker (exported but empty) turning a Claude Code caller into AGY.
+  test("an empty AGY marker is no marker: claude-code, as before", () => {
+    expect(detectOrigin({ ANTIGRAVITY_AGENT: "", ANTIGRAVITY_CONVERSATION_ID: "" })).toBe("claude-code");
+  });
+
+  // Catches: the new markers moving AGY in the chain: it stays after Codex, Copilot CLI and OpenCode and before
+  // Qwen Code, oh-my-pi and DSH, which export their own markers into every child.
+  test("the chain's order is kept around AGY", () => {
+    const agy = { ANTIGRAVITY_AGENT: "1", ANTIGRAVITY_CONVERSATION_ID: "c1" };
+    expect(detectOrigin({ ...agy, CODEX_THREAD_ID: "t" })).toBe("codex");
+    expect(detectOrigin({ ...agy, COPILOT_CLI: "1" })).toBe("copilot-cli");
+    expect(detectOrigin({ ...agy, OPENCODE: "1" })).toBe("opencode");
+    expect(detectOrigin({ ...agy, QWEN_CODE_SESSION_ID: "q1" })).toBe("gemini-cli");
+    expect(detectOrigin({ ...agy, OMPCODE: "1" })).toBe("gemini-cli");
+    expect(detectOrigin({ ...agy, DSH_SHELL: "1" })).toBe("gemini-cli");
   });
 });
